@@ -123,8 +123,9 @@ class ResNet(nn.Module):
         xe2, ye2 = self.cross_block2(self.rgb_encoder2(xe1), self.lidar_encoder2(ye1))
         xe3, ye3 = self.cross_block3(self.rgb_encoder3(xe2), self.lidar_encoder3(ye2))
 
-        xe2 = self.dSpe(xe2)
-        ye2 = self.dSpa(ye2)
+        # xe2 = self.dSpe(xe2)
+        # ye2 = self.dSpa(ye2)
+        
         xe4 = self.rgb_encoder4(xe3)
         ye4 = self.lidar_encoder4(ye3)
 

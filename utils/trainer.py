@@ -1,11 +1,11 @@
 import time
-from tqdm import tqdm
+# from tqdm import tqdm
 
-import torch
-from torch import nn
-import torch.nn.functional as F
-from .mutual_info import Mutual_info, Mutual_info_cnn
-from .distillation import KL_loss
+# import torch
+# from torch import nn
+# import torch.nn.functional as F
+# from .mutual_info import Mutual_info, Mutual_info_cnn
+# from .distillation import KL_loss
 
 
 # Final
@@ -16,16 +16,13 @@ def trainer(net, contra_head, super_head, awl, criterion2, criterion4, \
     super_head.train()
 
     correct = 0
-    # train_bar = tqdm(enumerate(zip(data_loader, memory_loader)))
     train_bar = enumerate(zip(contrastive_loader, data_loader))
-    # train_bar = tqdm(enumerate(data_loader))
 
     for step, ((U_11, U_12, U_21, U_22, target), (S_1, S_2, label)) in train_bar:
         U_11 = U_11.cuda(non_blocking=True)
         U_12 = U_12.cuda(non_blocking=True)
         U_21 = U_21.cuda(non_blocking=True)
         U_22 = U_22.cuda(non_blocking=True)
-
 
 
     #     ########## contra ####################################>>>>>>>>>>>>>>>

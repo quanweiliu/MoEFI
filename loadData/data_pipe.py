@@ -20,9 +20,9 @@ def set_deterministic(seed):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-# 版本 2，不要切一半的数据增强了，直接用随机扰动数据增强
+
 def get_data(args):
-    data1, data2, data_gt = data_reader.load_data(args.dataset_name, path_data=args.path_data, type_data="Houston")
+    data1, data2, data_gt = data_reader.load_data(args.dataset_name, path_data=args.path_data, type_data="GT")
     data1, data2, train_gt = data_reader.load_data(args.dataset_name, path_data=args.path_data, type_data="TRLabel")
     data1, data2, test_gt = data_reader.load_data(args.dataset_name, path_data=args.path_data, type_data="TSLabel")
 

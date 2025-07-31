@@ -43,8 +43,10 @@ def get_args():
     parser.add_argument('--lambda_super', default=1, type=float, help='Temperature used in softmax')
 
     # train config
-    parser.add_argument('--batch_size', default=256, type=int, help='Number of images in each mini-batch')
-    parser.add_argument('--epochs', default=30, type=int, help='Number of sweeps over the dataset to train')
+    parser.add_argument('--batch_size', default=512, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--epochs', default=50, type=int, help='Number of sweeps over the dataset to train')
+    parser.add_argument('--learning_rate', default=1e-3, type=float, help='Learning rate for the optimizer')
+    parser.add_argument('--weight_decay', default=1e-3, type=float, help='Weight decay for the optimizer')
     parser.add_argument('--tune_epochs', default=10, type=int, help='Number of sweeps over the dataset to train')
 
     parser.add_argument('--knn_k', default=5, type=int, help='Top k most similar images used to predict the label')
