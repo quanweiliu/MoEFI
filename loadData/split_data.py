@@ -100,7 +100,6 @@ class HyperX(torch.utils.data.Dataset):
             return data11, data12, data21, data22, label
         
         else:
-            
             return data11, data12, data2, label
 
 
@@ -184,15 +183,15 @@ class HyperX2(torch.utils.data.Dataset):
             x_p, y_p = self.indices[rand_idx]
             xp1, yp1 = x_p - self.patch_size // 2, y_p - self.patch_size // 2
             xp2, yp2 = xp1 + self.patch_size, yp1 + self.patch_size
-            data_pair = self.data[xp1:xp2, yp1:yp2].transpose((2, 0, 1))
+            data_pair = self.data1[xp1:xp2, yp1:yp2].transpose((2, 0, 1))
             data_pair = torch.from_numpy(data_pair)
             data11 = self.transform(data1, data_pair)
             data12 = self.transform(data1, data_pair)
 
             data21 = self.transform(data2)
             data22 = self.transform(data2)
-
             return data11, data12, data21, data22, label
+        
         else:
             return data1, data2, label
         

@@ -154,7 +154,7 @@ if __name__=="__main__":
     x = torch.randn(4, 144, 28, 28, device=device)
     y = torch.randn(4, 3, 28, 28, device=device)
 
-    model = Model_base(channell=144, channel2=3).to(device)
+    model = ResNet(channell=144, channel2=3).to(device)
     # print(model)
     output, x_put, y_put = model(x, y)
     print("output", output.shape, x_put.shape, y_put.shape)

@@ -71,6 +71,15 @@ class Spectral_mixing(object):
 
         return img1
 
+# if __name__ == "__main__":
+#     # Example usage
+#     img1 = torch.randn(3, 64, 64)  # Simulated image with 3 spectral bands
+#     img2 = torch.randn(3, 64, 64)  # Another image with the same number of bands
+
+#     spectral_mixing = Spectral_mixing(p=0.5, mix_band=2)
+#     mixed_img = spectral_mixing(img1, img2)
+#     print("Mixed Image Shape:", mixed_img.shape)
+
 
 class Spectral_cutmix(object):
     """
@@ -206,7 +215,8 @@ class DataAugmentationDINO2(object):
         # first global crop
         self.global_transfo = transforms.Compose([
                 # transforms.RandomResizedCrop(randCrop, antialias=True, interpolation=InterpolationMode.BICUBIC),
-                transforms.RandomCrop(args.randomCrop, padding=1, padding_mode='reflect'),
+                # transforms.RandomCrop(args.randomCrop, padding=1, padding_mode='reflect'),
+                transforms.RandomCrop(args.randomCrop),
                 transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomVerticalFlip(p=0.5),
                 AddNoise(),
@@ -215,12 +225,14 @@ class DataAugmentationDINO2(object):
                 # transforms.RandomRotation(90),
                 # transforms.GaussianBlur((3)),
                 # transforms.RandomErasing(0.5)
-                # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
                 ])
 
     def __call__(self, image, x_pair=None):
-        image = self.global_transfo(image)
+
         if x_pair is not None:
             image = Spectral_mixing()(image, x_pair)
             image = Spectral_cutmix()(image, x_pair)
+
+        image = self.global_transfo(image)
+        # print(image.shape)
         return image
