@@ -5,7 +5,6 @@ def get_args():
     parser = argparse.ArgumentParser(description='Deep Multiview Learning for HSI classification')
     # general
     parser.add_argument('--backbone', default="resNet", type=str, help='network backbone')
-    parser.add_argument('--depth', default=4, type=int, help="vit depth")
 
     # datasets
     parser.add_argument('--dataset_name', default="India Pines", type=str, help='network backbone')
@@ -17,7 +16,7 @@ def get_args():
     parser.add_argument('--patch_size', default=13, type=int, help='the number of patch size')
     parser.add_argument('--components', default=15, type=int, help='the number of train samples')      # 32 / 10
     parser.add_argument('--train_num', default=100, type=int, help='the number of train samples')
-    parser.add_argument('--train_ratio', default=0.1, type=float, help='the ratio of train samples')
+    parser.add_argument('--train_ratio', default=0.9, type=float, help='the ratio of train samples')
     parser.add_argument('--val_num', default=0, type=int, help='the number of validation samples')
     parser.add_argument('--pca', action='store_true', default=False)
     
@@ -47,10 +46,8 @@ def get_args():
     parser.add_argument('--epochs', default=50, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--learning_rate', default=1e-3, type=float, help='Learning rate for the optimizer')
     parser.add_argument('--weight_decay', default=1e-3, type=float, help='Weight decay for the optimizer')
-    parser.add_argument('--tune_epochs', default=10, type=int, help='Number of sweeps over the dataset to train')
 
-    parser.add_argument('--knn_k', default=5, type=int, help='Top k most similar images used to predict the label')
-    parser.add_argument('--knn-t', default=0.1, type=float, help='softmax temperature in kNN monitor; could be different with moco-t')
+    parser.add_argument('--tune_epochs', default=10, type=int, help='Number of sweeps over the dataset to train')
 
     # log
     parser.add_argument('--plot_loss_curve', action='store_true', default=False)

@@ -9,19 +9,19 @@ class DINOHead(nn.Module):
         self.g1 = nn.Sequential(
                                nn.Linear(in_dim, 256, bias=False), 
                                nn.BatchNorm1d(256),
-                                nn.ReLU(inplace=True), 
+                                # nn.ReLU(inplace=True), 
                                 nn.Linear(256, out_dim, bias=True))
         
         self.g2 = nn.Sequential(
                                nn.Linear(in_dim, 256, bias=False), 
                                nn.BatchNorm1d(256),
-                                nn.ReLU(inplace=True), 
+                                # nn.ReLU(inplace=True), 
                                 nn.Linear(256, out_dim, bias=True))
         
         self.g3 = nn.Sequential(
                                nn.Linear(in_dim, 256, bias=False), 
                                nn.BatchNorm1d(256),
-                                nn.ReLU(inplace=True), 
+                                # nn.ReLU(inplace=True), 
                                 nn.Linear(256, out_dim, bias=True))
     def forward(self, x, y, z=None):
         x = self.g1(x)
@@ -89,7 +89,7 @@ class linearHead(nn.Module):
     def __init__(self, in_dim=128, class_num=16):
         super(linearHead, self).__init__()
         self.c = nn.Sequential(nn.Linear(in_dim, 256),
-                               nn.Dropout(0.5),
+                            #    nn.Dropout(0.5),
                                nn.BatchNorm1d(256),
                             #    nn.ReLU(inplace=True), 
                                nn.Linear(256, class_num))

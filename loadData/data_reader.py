@@ -91,17 +91,17 @@ class DataReader2():
     def truth(self):
         return self.g_truth.astype(np.int64)
 
-    @property
-    def normal_cube(self):
-        """
-        normalization data: range(0, 1)
-        """
-        self.data_cube = self.data_cube.astype(np.float32)
-        self.data_cube2 = self.data_cube2.astype(np.float32) 
+    # @property
+    # def normal_cube(self):
+    #     """
+    #     normalization data: range(0, 1)
+    #     """
+    #     self.data_cube = self.data_cube.astype(np.float32)
+    #     self.data_cube2 = self.data_cube2.astype(np.float32) 
 
-        self.data_cube = (self.data_cube-np.min(self.data_cube)) / (np.max(self.data_cube)-np.min(self.data_cube))
-        self.data_cube2 = (self.data_cube2-np.min(self.data_cube2)) / (np.max(self.data_cube2)-np.min(self.data_cube2))
-        return self.data_cube, self.data_cube2
+    #     self.data_cube = (self.data_cube-np.min(self.data_cube)) / (np.max(self.data_cube)-np.min(self.data_cube))
+    #     self.data_cube2 = (self.data_cube2-np.min(self.data_cube2)) / (np.max(self.data_cube2)-np.min(self.data_cube2))
+    #     return self.data_cube, self.data_cube2
 
     # @property
     # def normal_cube(self):

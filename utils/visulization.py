@@ -37,15 +37,13 @@ def visulization(net, super_head, data_loader, groundTruth, args):
         test_preds = torch.cat(test_preds, dim=0).numpy() + 1
         predict_labels = test_preds.reshape(hight, width)
 
-        # print(np.unique(predict_labels))
-        # draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy.item(), 4)) + "_full"))
-        # 背景像元置为 0，因为 pred 预测了所有的像元，但是背景像元并不需要画出来
-        for i in range(hight):
-            for j in range(width):
-                if groundTruth[i][j] == 0:
-                    predict_labels[i][j] = 0
+        draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy, 4)) + "_full"))
+        # for i in range(hight):
+        #     for j in range(width):
+        #         if groundTruth[i][j] == 0:
+        #             predict_labels[i][j] = 0
 
-        draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy, 4)) + "_label")) 
+        # draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy, 4)) + "_label")) 
 
         # savemat(os.path.join(args.result_dir, args.dataset_name + "_gt.mat"), \
         #         {args.dataset_name + '_gt': predict_labels})

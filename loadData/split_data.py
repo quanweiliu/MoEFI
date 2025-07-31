@@ -127,10 +127,7 @@ class HyperX2(torch.utils.data.Dataset):
         self.center_pixel = True
         self.remove_zero_labels = remove_zero_labels
     
-        # print(supervision)
         mask = np.ones_like(gt)
-        # print("mask", mask.shape) 
-        
         x_pos, y_pos = np.nonzero(mask)
         p = self.patch_size // 2
 

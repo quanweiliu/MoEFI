@@ -209,7 +209,8 @@ class Solarization(object):
 #         # for _ in range(self.local_crops_number):
 #         #     crops.append(self.local_transfo(image))
 #         return crops
-    
+
+
 class DataAugmentationDINO2(object):
     def __init__(self, args):
         # first global crop
@@ -219,9 +220,9 @@ class DataAugmentationDINO2(object):
                 transforms.RandomCrop(args.randomCrop),
                 transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomVerticalFlip(p=0.5),
-                AddNoise(),
-                SpectralDropout(),
-                SpectralShift(),
+                # AddNoise(),
+                # SpectralDropout(),
+                # SpectralShift(),
                 # transforms.RandomRotation(90),
                 # transforms.GaussianBlur((3)),
                 # transforms.RandomErasing(0.5)
@@ -229,9 +230,9 @@ class DataAugmentationDINO2(object):
 
     def __call__(self, image, x_pair=None):
 
-        if x_pair is not None:
-            image = Spectral_mixing()(image, x_pair)
-            image = Spectral_cutmix()(image, x_pair)
+        # if x_pair is not None:
+        #     image = Spectral_mixing()(image, x_pair)
+        #     image = Spectral_cutmix()(image, x_pair)
 
         image = self.global_transfo(image)
         # print(image.shape)

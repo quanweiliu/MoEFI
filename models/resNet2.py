@@ -101,13 +101,13 @@ class ResNet(nn.Module):
         self.cross_block2 = Cross_identity()
         self.cross_block3 = Cross_identity()
         
-        self.msmoe = ModalitySpecificMoE(filters[3])
-        self.gated_fusion = Gated_Fusion(filters[3])
-        self.cross_attention_fusion = CrossAttentionFusion()
-        self.bimodal_cross_attention_fusion = BiModalCrossAttentionFusion()
+        # self.msmoe = ModalitySpecificMoE(filters[3])
+        # self.gated_fusion = Gated_Fusion(filters[3])
+        # self.cross_attention_fusion = CrossAttentionFusion()
+        # self.bimodal_cross_attention_fusion = BiModalCrossAttentionFusion()
 
-        self.dSpe = DropBlock2D(0.5)
-        self.dSpa = DropSpectral(0.5)
+        self.dSpe = DropBlock2D()
+        self.dSpa = DropSpectral()
 
         self.Apooling2D1 = AttentionPooling(filters[3])
         self.Apooling2D2 = AttentionPooling(filters[3])
@@ -121,13 +121,15 @@ class ResNet(nn.Module):
         x_first, y_first = self.cross_block0(self.rgb_first(x), self.lidar_first(y))
         xe1, ye1 = self.cross_block1(self.rgb_encoder1(x_first), self.lidar_encoder1(y_first))
         xe2, ye2 = self.cross_block2(self.rgb_encoder2(xe1), self.lidar_encoder2(ye1))
+
+        xe2 = self.dSpe(xe2)
+        ye2 = self.dSpa(ye2)
+
         xe3, ye3 = self.cross_block3(self.rgb_encoder3(xe2), self.lidar_encoder3(ye2))
 
-        # xe2 = self.dSpe(xe2)
-        # ye2 = self.dSpa(ye2)
-        
         xe4 = self.rgb_encoder4(xe3)
         ye4 = self.lidar_encoder4(ye3)
+        # print("xe4", xe4.shape, "ye4", ye4.shape) # [512, 512, 2, 2]
 
         ## center
         center = xe4 + ye4
@@ -137,9 +139,9 @@ class ResNet(nn.Module):
         # center = self.bimodal_cross_attention_fusion(xe4, ye4)    
         # print(center.shape)    # [1024, 512, 2, 2]
 
-        # output = self.avgpool1(center)
-        # xe4 = self.avgpool2(center)
-        # ye4 = self.avgpool3(center)
+        # xoutput = self.avgpool1(xe4).flatten(1)  # [batch, 512]
+        # youtput = self.avgpool2(ye4).flatten(1)
+        # output = self.avgpool3(center).flatten(1)
 
         xoutput = self.Apooling2D1(xe4)  # [batch, 512]
         youtput = self.Apooling2D2(ye4)
