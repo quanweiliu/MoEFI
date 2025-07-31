@@ -8,6 +8,78 @@ from .mutual_info import Mutual_info, Mutual_info_cnn
 from .distillation import KL_loss
 
 
+# Final
+def trainer(net, contra_head, super_head, awl, criterion2, criterion4, \
+          criterion5, data_loader, contrastive_loader, train_optimizer, args):
+    net.train()
+    contra_head.train()
+    super_head.train()
+
+    correct = 0
+    # train_bar = tqdm(enumerate(zip(data_loader, memory_loader)))
+    train_bar = enumerate(zip(contrastive_loader, data_loader))
+    # train_bar = tqdm(enumerate(data_loader))
+
+    for step, ((U_11, U_12, U_21, U_22, target), (S_1, S_2, label)) in train_bar:
+        U_11 = U_11.cuda(non_blocking=True)
+        U_12 = U_12.cuda(non_blocking=True)
+        U_21 = U_21.cuda(non_blocking=True)
+        U_22 = U_22.cuda(non_blocking=True)
+
+
+
+    #     ########## contra ####################################>>>>>>>>>>>>>>>
+        u_out11, u_out_12, u_out_1f = net(U_11, U_21)
+        u_f11, u_f12, u_1f = contra_head(u_out11, u_out_12, u_out_1f)
+
+        u_out21, u_out_22, u_out_2f = net(U_12, U_22)
+        u_f21, u_f22, u_2f = contra_head(u_out21, u_out_22, u_out_2f)
+
+        loss_contra1 = criterion4(u_f11, u_f21)
+        loss_contra2 = criterion4(u_f12, u_f22)
+        loss_contra3 = criterion5(u_1f, u_2f, [u_f11, u_f12, u_f21, u_f22])
+        # loss_contra = contra_loss1 + contra_loss2
+        loss_contra = args.lambda_contra*(loss_contra1 + loss_contra2 + loss_contra3)
+    #     ########## contra ######################################<<<<<<<<<<<<<<
+
+
+
+
+    #     ########## super ####################################>>>>>>>>>>>>>>>
+        label = label - 1
+        S_1  = S_1.cuda(non_blocking=True)
+        S_2  = S_2.cuda(non_blocking=True)
+        label = label.cuda(non_blocking=True)
+
+        s_out1, s_out_2, s_out_f = net(S_1, S_2)
+        s_out = super_head(s_out_f)
+        loss_super = criterion2(s_out, label)
+        loss_super = args.lambda_super*loss_super
+        ########## super ######################################<<<<<<<<<<<<<<
+
+
+
+        ########## joint ####################################>>>>>>>>>>>>>>>
+        if args.awl:
+            loss = awl(loss_contra, loss_super)
+        else:
+            loss = loss_contra + loss_super
+    #     ########## joint ####################################<<<<<<<<<<<<<<<
+
+        pred = s_out.data.max(1, keepdim=True)[1]
+        correct += pred.eq(label.data.view_as(pred)).sum()
+        train_optimizer.zero_grad()
+        loss.backward()
+        train_optimizer.step()
+
+    train_accuracy = 100. * correct / len(data_loader.dataset)
+
+    return round(loss.item(), 4), round(loss_contra.item(), 4), round(loss_super.item(), 4), round(train_accuracy.item(), 4)
+
+
+
+
+
 # 第一个固定版本的变体，不要切分高光谱图像了
 def train_cnn2(net, contra_head, super_head, awl, criterion1, criterion2, \
           data_loader, contrastive_loader, train_optimizer, args):
@@ -103,7 +175,7 @@ def train_cnn2(net, contra_head, super_head, awl, criterion1, criterion2, \
         loss.backward()
         train_optimizer.step()
 
-    train_accuracy = 100. * train_correct / len(contrastive_loader.dataset)
+    train_accuracy = 100. * train_correct / len(data_loader.dataset)
     train_time = time.time() - start_time
     return round(loss.item(), 4), round(loss_contra.item(), 4), round(loss_super.item(), 4), round(train_accuracy.item(), 4), round(train_time, 2)
 

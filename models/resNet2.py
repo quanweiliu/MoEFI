@@ -129,9 +129,9 @@ class ResNet(nn.Module):
         ye4 = self.lidar_encoder4(ye3)
 
         ## center
-        # center = xe4 + ye4
+        center = xe4 + ye4
         # center = self.gated_fusion(xe4, ye4)
-        center = self.msmoe(xe4, ye4)
+        # center = self.msmoe(xe4, ye4)
         # center = self.cross_attention_fusion(xe4, ye4)
         # center = self.bimodal_cross_attention_fusion(xe4, ye4)    
         # print(center.shape)    # [1024, 512, 2, 2]
