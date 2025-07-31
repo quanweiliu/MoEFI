@@ -12,10 +12,11 @@ import time
 def trainer(net, contra_head, super_head, awl, criterion2, criterion4, \
           criterion5, data_loader, contrastive_loader, train_optimizer, args):
     net.train()
+
     contra_head.train()
     super_head.train()
-
     correct = 0
+
     train_bar = enumerate(zip(contrastive_loader, data_loader))
 
     for step, ((U_11, U_12, U_21, U_22, target), (S_1, S_2, label)) in train_bar:
@@ -24,7 +25,6 @@ def trainer(net, contra_head, super_head, awl, criterion2, criterion4, \
         U_21 = U_21.cuda(non_blocking=True)
         U_22 = U_22.cuda(non_blocking=True)
 
-
     #     ########## contra ####################################>>>>>>>>>>>>>>>
         u_out11, u_out_12, u_out_1f = net(U_11, U_21)
         u_f11, u_f12, u_1f = contra_head(u_out11, u_out_12, u_out_1f)
@@ -32,10 +32,11 @@ def trainer(net, contra_head, super_head, awl, criterion2, criterion4, \
         u_out21, u_out_22, u_out_2f = net(U_12, U_22)
         u_f21, u_f22, u_2f = contra_head(u_out21, u_out_22, u_out_2f)
 
-        loss_contra1 = criterion4(u_f11, u_f21)
-        loss_contra2 = criterion4(u_f12, u_f22)
+        loss_contra1 = criterion4(u_f11, u_f22)
+        loss_contra2 = criterion4(u_f12, u_f21)
         loss_contra3 = criterion5(u_1f, u_2f, [u_f11, u_f12, u_f21, u_f22])
         # loss_contra = contra_loss1 + contra_loss2
+        # loss_contra = args.lambda_contra*(loss_contra1)
         loss_contra = args.lambda_contra*(loss_contra1 + loss_contra2 + loss_contra3)
     #     ########## contra ######################################<<<<<<<<<<<<<<
 

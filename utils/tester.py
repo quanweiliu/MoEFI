@@ -8,15 +8,14 @@ from sklearn.metrics import classification_report,cohen_kappa_score
 
 def tester(net, super_head, criterion2, data_loader, args):
     net.eval()
+
     super_head.eval()
-    
     test_preds = []
     targets = []
     correct = 0
 
     with torch.no_grad():
         for S_11, S_2, target in data_loader:
-        # for data, _, target in data_loader:
             target = target - 1
             S_11 = S_11.to(args.device)
             S_2 = S_2.to(args.device)

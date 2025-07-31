@@ -4,18 +4,18 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser(description='Deep Multiview Learning for HSI classification')
     # general
-    parser.add_argument('--backbone', default="vit", type=str, help='network backbone')
+    parser.add_argument('--backbone', default="resNet", type=str, help='network backbone')
     parser.add_argument('--depth', default=4, type=int, help="vit depth")
 
     # datasets
     parser.add_argument('--dataset_name', default="India Pines", type=str, help='network backbone')
-    # parser.add_argument('--path_data', type=str, default="/home/leo/DatasetSMD/")
+    parser.add_argument('--split_type', default="ratio", type=str, help='split_type: ratio, random, disjoint')
     parser.add_argument('--path_data', type=str, default="/home/icclab/Documents/lqw/DatasetMMF/")
     parser.add_argument('--print-data-info', action='store_true', default=False)
     parser.add_argument('--data_info_start', default=1, type=int)
     parser.add_argument('--remove_zero_labels', action='store_true', default=True)
-    parser.add_argument('--patch_size', default=25, type=int, help='the number of patch size')
-    parser.add_argument('--components', default=10, type=int, help='the number of train samples')      # 32 / 10
+    parser.add_argument('--patch_size', default=13, type=int, help='the number of patch size')
+    parser.add_argument('--components', default=15, type=int, help='the number of train samples')      # 32 / 10
     parser.add_argument('--train_num', default=100, type=int, help='the number of train samples')
     parser.add_argument('--train_ratio', default=0.1, type=float, help='the ratio of train samples')
     parser.add_argument('--val_num', default=0, type=int, help='the number of validation samples')
