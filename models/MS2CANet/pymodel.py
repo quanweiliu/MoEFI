@@ -198,7 +198,7 @@ class pyCNN(nn.Module):
         # x = x1 + x2
 
         # out3 = self.out3(x)
-        return x1, x2
+        return x1, x2, (x1+x2)
 
 
 # cnn = pyCNN(NC=40,Classes=13,FM=64)

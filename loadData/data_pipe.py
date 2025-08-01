@@ -22,7 +22,7 @@ def set_deterministic(seed):
 
 
 def get_data(args):
-    data1, data2, data_gt = data_reader.load_data(args.dataset_name, path_data=args.path_data, type_data="GT")
+    data1, data2, GT = data_reader.load_data(args.dataset_name, path_data=args.path_data, type_data="GT")
     data1, data2, train_gt = data_reader.load_data(args.dataset_name, path_data=args.path_data, type_data="TRLabel")
     data1, data2, test_gt = data_reader.load_data(args.dataset_name, path_data=args.path_data, type_data="TSLabel")
 
@@ -56,7 +56,7 @@ def get_data(args):
 
 
     # 这个不要也能运行，但是会显著的影响精度
-    data_gt = np.pad(data_gt, pad_width=pad_width, mode="constant", constant_values=(0))
+    data_gt = np.pad(GT, pad_width=pad_width, mode="constant", constant_values=(0))
     train_gt = np.pad(train_gt, pad_width=pad_width, mode="constant", constant_values=(0))
     test_gt = np.pad(test_gt, pad_width=pad_width, mode="constant", constant_values=(0))
 
@@ -70,4 +70,4 @@ def get_data(args):
         print("print_data_info : ---->")
         data_reader.data_info(train_gt, val_gt, test_gt, start=args.data_info_start)
 
-    return img1, img2, train_gt, val_gt, test_gt, data_gt
+    return img1, img2, train_gt, val_gt, test_gt, data_gt, GT

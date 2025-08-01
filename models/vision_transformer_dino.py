@@ -18,7 +18,8 @@ import torch.nn as nn
 import torch.utils.checkpoint
 from torch.nn.init import trunc_normal_
 
-from .layers import Mlp, PatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTensorBlock as Block
+from .layers import Mlp, PatchEmbed, CustomSmallPatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTensorBlock as Block
+# from layers import Mlp, PatchEmbed, CustomSmallPatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTensorBlock as Block
 
 
 logger = logging.getLogger("dinov2")
@@ -181,8 +182,10 @@ class DinoVisionTransformer(nn.Module):
         previous_dtype = x.dtype
         npatch = x.shape[1] - 1
         N = self.pos_embed.shape[1] - 1
+        
         if npatch == N and w == h:
             return self.pos_embed
+        
         pos_embed = self.pos_embed.float()
         class_pos_embed = pos_embed[:, 0]
         patch_pos_embed = pos_embed[:, 1:]
@@ -214,11 +217,16 @@ class DinoVisionTransformer(nn.Module):
     def prepare_tokens_with_masks(self, x, masks=None):
         B, nc, w, h = x.shape
         x = self.patch_embed(x)
+        # print("x shape:", x.shape)
         if masks is not None:
             x = torch.where(masks.unsqueeze(-1), self.mask_token.to(x.dtype).unsqueeze(0), x)
 
         x = torch.cat((self.cls_token.expand(x.shape[0], -1, -1), x), dim=1)
+        # print("cat output shape", x.shape)         # [B, 4, 384]/[B, 1, 384]
+
+        # print("pos_embed shape:", self.pos_embed.shape)
         x = x + self.interpolate_pos_encoding(x, w, h)
+        # print("output shape", x.shape)             # [B, 4, 384]/[B, 1, 384]
 
         if self.register_tokens is not None:
             x = torch.cat(
@@ -338,6 +346,49 @@ def init_weights_vit_timm(module: nn.Module, name: str = ""):
             nn.init.zeros_(module.bias)
 
 
+def load_dinov2_transformer_only(model, pretrained_path):
+    state_dict = torch.load(pretrained_path, map_location="cpu")
+    if "model" in state_dict:
+        state_dict = state_dict["model"]
+    filtered = {
+        k: v for k, v in state_dict.items()
+        if not (k.startswith("patch_embed") or k.startswith("pos_embed") or k.startswith("cls_token"))
+    }
+    msg = model.load_state_dict(filtered, strict=False)
+    print("✅ Transformer weights loaded (without patch_embed):", msg)
+
+
+def vit_hsi(in_chans=3, img_size=6, patch_size=2,  **kwargs):
+    model = DinoVisionTransformer(
+        img_size=img_size,
+        patch_size=patch_size, 
+        in_chans=in_chans,
+        embed_dim=384,
+        depth=12,
+        num_heads=6,
+        mlp_ratio=4.0,
+        embed_layer=CustomSmallPatchEmbed,  # 替换 patch_embed
+        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_chunks=0,
+    )
+    return model
+
+def vit_selected_hsi(in_chans=3, img_size=6, patch_size=2, selected_layers=[0, 2, 5, 7], **kwargs):
+    model = DinoVisionTransformer(
+        img_size=img_size,
+        patch_size=patch_size,
+        in_chans=in_chans,
+        embed_dim=384,
+        depth=len(selected_layers),
+        num_heads=6,
+        mlp_ratio=4.0,
+        embed_layer=CustomSmallPatchEmbed,
+        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_chunks=0,
+    )
+    return model
+
+
 def vit_small(patch_size=16, num_register_tokens=0, **kwargs):
     model = DinoVisionTransformer(
         patch_size=patch_size,
@@ -395,3 +446,100 @@ def vit_giant2(patch_size=16, num_register_tokens=0, **kwargs):
         **kwargs,
     )
     return model
+
+
+def load_transformer(model, pretrained_path):
+    state_dict = torch.load(pretrained_path, map_location="cpu")
+    if "model" in state_dict:
+        state_dict = state_dict["model"]
+    filtered = {
+        k: v for k, v in state_dict.items()
+        if not (k.startswith("patch_embed") or k.startswith("pos_embed") or k.startswith("cls_token"))
+    }
+    msg = model.load_state_dict(filtered, strict=False)
+    print("✅ Transformer weights loaded (without patch_embed):", msg)
+
+
+def load_selected_blocks(model, pretrained_path, selected_layers=[0, 2, 5, 7]):
+    """
+    仅加载指定的 transformer block 层，并重命名权重以适配当前模型。
+    参数：
+        model: 精简后的 ViT 模型（如 depth=4）
+        pretrained_path: DINOv2 的预训练权重路径
+        selected_layers: 要加载的 block 层编号列表，例如 [0, 2, 5, 7]
+    """
+    state_dict = torch.load(pretrained_path, map_location="cpu")
+    if "model" in state_dict:
+        state_dict = state_dict["model"]
+
+    filtered = {}
+
+    layer_mapping = {pre_idx: new_idx for new_idx, pre_idx in enumerate(selected_layers)}
+    for k, v in state_dict.items():
+        if k.startswith("blocks."):
+            parts = k.split(".")
+            layer_idx = int(parts[1])
+            if layer_idx in selected_layers:
+                new_k = k.replace(f"blocks.{layer_idx}", f"blocks.{layer_mapping[layer_idx]}")
+                filtered[new_k] = v
+        elif not (k.startswith("patch_embed") or k.startswith("pos_embed") or k.startswith("cls_token")):
+            # 保留其他非 block 权重（如 norm）
+            filtered[k] = v
+
+    msg = model.load_state_dict(filtered, strict=False)
+    print(f"✅ Selected transformer blocks loaded: {selected_layers} -> [0, 1, 2, ...]")
+    print("   State dict loading report:", msg)
+
+
+
+if __name__ == "__main__":
+
+
+    def vit_hsi(in_chans=3, img_size=6, patch_size=2,  **kwargs):
+        model = DinoVisionTransformer(
+            img_size=img_size,
+            patch_size=patch_size, 
+            in_chans=in_chans,
+            embed_dim=384,
+            depth=12,
+            num_heads=6,
+            mlp_ratio=4.0,
+            embed_layer=CustomSmallPatchEmbed,  # 替换 patch_embed
+            block_fn=partial(Block, attn_class=MemEffAttention),
+            block_chunks=0,
+        )
+        return model
+
+    img_size = 9
+    patch_size = 3
+    x = torch.randn(2, 3, img_size, img_size)  # batch size=2
+    
+    model = vit_hsi(img_size=img_size, patch_size=patch_size, in_chans=3)
+
+
+    # 3. 加载权重：只加载 transformer 编码器层
+
+    # 示例调用（请替换你的路径）
+    # load_transformer(model, "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCL_competitive/weights/dinov2_vits14_pretrain.pth")
+
+    # 4. 模拟输入图像（5x5）
+    with torch.no_grad():
+        out = model(x)
+        print("output shape:", out.shape)  # [2, 768] from cls token
+
+
+#######################################################################################
+
+    img_size = 9
+    patch_size = 3
+    x = torch.randn(2, 3, img_size, img_size)  # batch size=2
+
+    selected_layers = [0, 2, 5, 7]  # 从 dinov2 中选择的层
+    model = vit_selected_hsi(in_chans=3, img_size=img_size, patch_size=patch_size, selected_layers=[0, 2, 5, 7])
+    # 加载指定层的权重
+    # load_selected_blocks(model, "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCL_competitive/weights/dinov2_vits14_pretrain.pth", selected_layers)
+
+    # 4. 模拟输入图像（5x5）
+    with torch.no_grad():
+        out = model(x)
+        print("output shape:", out.shape)  # [2, 768] from cls token

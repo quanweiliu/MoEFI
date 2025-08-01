@@ -48,7 +48,35 @@ def visulization(net, super_head, data_loader, groundTruth, args):
         # savemat(os.path.join(args.result_dir, args.dataset_name + "_gt.mat"), \
         #         {args.dataset_name + '_gt': predict_labels})
 
+def test_visulization(net, super_head, data_loader, args, groundTruth):
+    net.eval()
+    super_head.eval()
+    
+    test_preds = []
 
+    with torch.no_grad():
+        for S_1, S_2, target in data_loader:
+        # for data, _, target in data_loader:
+            target = target - 1
+            S_1 = S_1.to(args.device)
+            S_2 = S_2.to(args.device)
+            target = target.to(args.device)
+                
+            s_base1, s_base2, s_fuse = net(S_1, S_2)
+            s_out = super_head(s_fuse)
+
+            test_pred = s_out.data.max(1, keepdim=True)[1]
+            # test_pred = torch.argmax(s_out, dim=1)  # 这一行和上面的实现效果是一样的
+            test_preds.append(test_pred.cpu())
+
+        hight, width = groundTruth.shape
+        test_preds = torch.cat(test_preds, dim=0).numpy()
+        predict_labels = test_preds.reshape(hight, width)
+
+        # print(np.unique(predict_labels))
+        draw(predict_labels, os.path.join(args.result_dir + "full"))
+        predict_labels[groundTruth == 0] = 0
+        draw(predict_labels, os.path.join(args.result_dir + "pure"))    
 
 def draw(label, name, scale: float = 4.0, dpi: int = 400, save_img=True):
     '''

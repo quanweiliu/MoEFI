@@ -211,7 +211,7 @@ class Solarization(object):
 #         return crops
 
 
-class DataAugmentationDINO2(object):
+class DataAugmentation(object):
     def __init__(self, args):
         # first global crop
         self.global_transfo = transforms.Compose([
@@ -230,10 +230,8 @@ class DataAugmentationDINO2(object):
 
     def __call__(self, image, x_pair=None):
 
+        image = self.global_transfo(image)
         # if x_pair is not None:
         #     image = Spectral_mixing()(image, x_pair)
         #     image = Spectral_cutmix()(image, x_pair)
-
-        image = self.global_transfo(image)
-        # print(image.shape)
         return image

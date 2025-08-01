@@ -106,7 +106,7 @@ class HyperX(torch.utils.data.Dataset):
 class HyperX2(torch.utils.data.Dataset):
     """ Generic class for a hyperspectral scene """
 
-    def __init__(self, data1, data2, gt, transform, patch_size=5, remove_zero_labels=True):
+    def __init__(self, data1, data2, gt, transform, args):
         """
         Args:
             data: 3D hyperspectral image
@@ -122,11 +122,12 @@ class HyperX2(torch.utils.data.Dataset):
         self.data2 = data2
         self.label = gt
         self.transform = transform
-        self.patch_size = patch_size
+        self.patch_size = args.patch_size
         self.ignored_labels = set()
         self.center_pixel = True
-        self.remove_zero_labels = remove_zero_labels
-    
+        self.contrastive = args.contrastive
+        self.remove_zero_labels = args.remove_zero_labels
+
         mask = np.ones_like(gt)
         x_pos, y_pos = np.nonzero(mask)
         p = self.patch_size // 2
@@ -174,7 +175,7 @@ class HyperX2(torch.utils.data.Dataset):
             label = label[self.patch_size // 2, self.patch_size // 2]
 
         # 随机选另一个 index 构造 x_pair
-        if self.transform is not None:
+        if self.transform is not None and self.contrastive:
             # 随机采样不同 index 构造 x_pair
             rand_idx = random.randint(0, len(self.indices) - 1)
             x_p, y_p = self.indices[rand_idx]
@@ -187,8 +188,13 @@ class HyperX2(torch.utils.data.Dataset):
 
             data21 = self.transform(data2)
             data22 = self.transform(data2)
-            return data11, data12, data21, data22, label
-        
+            return data11, data21, data12, data22, label
+            
+        elif self.transform is not None:
+            data1 = self.transform(data1)
+            data2 = self.transform(data2)
+            return data1, data2, label
+
         else:
             return data1, data2, label
         

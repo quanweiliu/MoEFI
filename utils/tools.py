@@ -186,6 +186,7 @@ def save_weights(train_loss, test_loss, best_loss, best_acc, \
                 "contra_head": contra_head.state_dict(),
                 "optimizer": optimizer.state_dict()}, 
                 os.path.join(args.result_dir, "test_loss.pth"))
+        # print("Save model with test_loss: {:.4f}, epoch: {}".format(test_loss, epoch))
 
 
             

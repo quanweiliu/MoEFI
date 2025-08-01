@@ -85,19 +85,6 @@ class FDGC_head(nn.Module):
         return x
 
 
-class linearHead(nn.Module):
-    def __init__(self, in_dim=128, class_num=16):
-        super(linearHead, self).__init__()
-        self.c = nn.Sequential(nn.Linear(in_dim, 256),
-                            #    nn.Dropout(0.5),
-                               nn.BatchNorm1d(256),
-                            #    nn.ReLU(inplace=True), 
-                               nn.Linear(256, class_num))
-    def forward(self, x):
-        x = self.c(x)
-        return x
-    
-
 
 class Conv_head(nn.Module):
     def __init__(self, in_dim=128, class_num=16):
