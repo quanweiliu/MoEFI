@@ -20,7 +20,7 @@ from torch.nn.init import trunc_normal_
 # from modules import ModalitySpecificMoE_ViT
 
 from .layers import Mlp, PatchEmbed, CustomSmallPatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTensorBlock as Block
-# from .modules import ModalitySpecificMoE_ViT
+from .modules import ModalitySpecificMoE_ViT
 
 logger = logging.getLogger("dinov2")
 
@@ -419,7 +419,7 @@ class Vit_base(nn.Module):
         block_fn=partial(Block, attn_class=MemEffAttention),
         block_chunks=0,
     )
-        # self.SpMoE = ModalitySpecificMoE_ViT(384)
+        self.SpMoE = ModalitySpecificMoE_ViT(384)
 
         # load_selected_blocks(self.model1, \
         #                 "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCLPlus/weights/dinov2_vits14_pretrain.pth",
@@ -600,9 +600,9 @@ def load_selected_blocks(model, pretrained_path, selected_layers=[0, 2, 5, 7]):
 
 if __name__ == "__main__":
     img_size = 12
-    x = torch.randn(2, 3, img_size, img_size)  # batch size=2
-    y = torch.randn(2, 1, img_size, img_size)  # batch size=2
-    model = Vit_base(channell=3, channel2=1, img_size=img_size)
+    x = torch.randn(2, 3, img_size, img_size).cuda()  # batch size=2
+    y = torch.randn(2, 1, img_size, img_size).cuda()  # batch size=2
+    model = Vit_base(channell=3, channel2=1, img_size=img_size).cuda()
     output1, outpu2, output3 = model(x, y)
     print("output shape:", output1.shape, outpu2.shape, output3.shape)  # [2, 37, 384] from cls
 

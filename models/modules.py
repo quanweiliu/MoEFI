@@ -382,9 +382,92 @@ class ModalityAwareMoE(nn.Module):
         return fused
 
 
+# class ModalitySpecificMoE(nn.Module):
+#     def __init__(self, in_channels, hidden_dim=256, rgb_experts=2, hsi_experts=2, shared_experts=2, top_k=1):
+#         super(ModalitySpecificMoE, self).__init__()
+#         self.rgb_experts = nn.ModuleList([
+#             nn.Sequential(
+#                 nn.Conv2d(in_channels, hidden_dim, 1),
+#                 nn.ReLU(),
+#                 nn.Conv2d(hidden_dim, in_channels, 1)
+#             ) for _ in range(rgb_experts)
+#         ])
+
+#         self.hsi_experts = nn.ModuleList([
+#             nn.Sequential(
+#                 nn.Conv2d(in_channels, hidden_dim, 1),
+#                 nn.ReLU(),
+#                 nn.Conv2d(hidden_dim, in_channels, 1)
+#             ) for _ in range(hsi_experts)
+#         ])
+
+#         self.shared_experts = nn.ModuleList([
+#             nn.Sequential(
+#                 nn.Conv2d(in_channels * 2, hidden_dim, 1),
+#                 nn.ReLU(),
+#                 nn.Conv2d(hidden_dim, in_channels, 1)
+#             ) for _ in range(shared_experts)
+#         ])
+
+#         self.rgb_gate = nn.Sequential(
+#             nn.AdaptiveAvgPool2d(1),
+#             nn.Flatten(),
+#             nn.Linear(in_channels, rgb_experts)
+#         )
+
+#         self.hsi_gate = nn.Sequential(
+#             nn.AdaptiveAvgPool2d(1),
+#             nn.Flatten(),
+#             nn.Linear(in_channels, hsi_experts)
+#         )
+
+#         self.shared_gate = nn.Sequential(
+#             nn.AdaptiveAvgPool2d(1),
+#             nn.Flatten(),
+#             nn.Linear(in_channels * 2, shared_experts)
+#         )
+
+#         self.top_k = top_k
+
+#     def forward(self, x, y):
+#         B, C, H, W = x.size()
+#         fusion_input = torch.cat([x, y], dim=1)
+
+#         rgb_scores = self.rgb_gate(x)  # [B, rgb_experts]
+#         hsi_scores = self.hsi_gate(y)  # [B, hsi_experts]
+#         shared_scores = self.shared_gate(fusion_input)  # [B, shared_experts]
+
+#         fused = torch.zeros_like(x)
+
+#         # Top-k routing for each expert group
+#         rgb_topk_val, rgb_topk_idx = torch.topk(rgb_scores, self.top_k, dim=1)
+#         hsi_topk_val, hsi_topk_idx = torch.topk(hsi_scores, self.top_k, dim=1)
+#         shared_topk_val, shared_topk_idx = torch.topk(shared_scores, self.top_k, dim=1)
+
+#         for i in range(self.top_k):
+#             for b in range(B):
+#                 rgb_weight = F.softmax(rgb_topk_val, dim=1)[b, i]
+#                 hsi_weight = F.softmax(hsi_topk_val, dim=1)[b, i]
+#                 shared_weight = F.softmax(shared_topk_val, dim=1)[b, i]
+
+#                 rgb_out = self.rgb_experts[rgb_topk_idx[b, i]](x[b].unsqueeze(0))
+#                 hsi_out = self.hsi_experts[hsi_topk_idx[b, i]](y[b].unsqueeze(0))
+#                 shared_out = self.shared_experts[shared_topk_idx[b, i]](fusion_input[b].unsqueeze(0))
+
+#                 fused[b] += rgb_weight * rgb_out.squeeze(0) + \
+#                             hsi_weight * hsi_out.squeeze(0) + \
+#                             shared_weight * shared_out.squeeze(0)
+
+#         return fused
+    
+
 class ModalitySpecificMoE(nn.Module):
     def __init__(self, in_channels, hidden_dim=256, rgb_experts=2, hsi_experts=2, shared_experts=2, top_k=1):
         super(ModalitySpecificMoE, self).__init__()
+        self.in_channels = in_channels
+        self.top_k = top_k
+
+        # Expert definitions remain the same
         self.rgb_experts = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(in_channels, hidden_dim, 1),
@@ -392,7 +475,6 @@ class ModalitySpecificMoE(nn.Module):
                 nn.Conv2d(hidden_dim, in_channels, 1)
             ) for _ in range(rgb_experts)
         ])
-
         self.hsi_experts = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(in_channels, hidden_dim, 1),
@@ -400,7 +482,6 @@ class ModalitySpecificMoE(nn.Module):
                 nn.Conv2d(hidden_dim, in_channels, 1)
             ) for _ in range(hsi_experts)
         ])
-
         self.shared_experts = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(in_channels * 2, hidden_dim, 1),
@@ -408,138 +489,165 @@ class ModalitySpecificMoE(nn.Module):
                 nn.Conv2d(hidden_dim, in_channels, 1)
             ) for _ in range(shared_experts)
         ])
-
+        
+        # Gating network definitions remain the same
         self.rgb_gate = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
             nn.Linear(in_channels, rgb_experts)
         )
-
         self.hsi_gate = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
             nn.Linear(in_channels, hsi_experts)
         )
-
         self.shared_gate = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
             nn.Linear(in_channels * 2, shared_experts)
         )
 
-        self.top_k = top_k
+    def _forward_moe(self, inputs, experts, gate):
+        """
+        Helper function for vectorized Mixture of Experts forward pass.
+        """
+        # 1. Get routing scores and select top-k experts
+        gate_scores = gate(inputs) # [B, num_experts]
+        topk_weights, topk_indices = torch.topk(gate_scores, self.top_k, dim=1) # [B, top_k]
+        topk_weights = F.softmax(topk_weights, dim=1) # [B, top_k]
+
+        # 2. Prepare for batch processing
+        B, C_in, H, W = inputs.shape
+        # The output channel count is defined by the experts
+        C_out = self.in_channels 
+        
+        # Flatten indices and weights for processing
+        flat_indices = topk_indices.flatten() # [B * top_k]
+        flat_weights = topk_weights.flatten() # [B * top_k]
+
+        # Repeat inputs to match the flattened indices
+        # Each input sample is repeated top_k times
+        repeated_inputs = inputs.repeat_interleave(self.top_k, dim=0) # [B * top_k, C_in, H, W]
+
+        # 3. Process inputs with their assigned experts in batches
+        output = torch.zeros(B, C_out, H, W, device=inputs.device)
+        
+        # Loop over experts (a small, fixed number), NOT the batch
+        for i, expert in enumerate(experts):
+            # Find which inputs are routed to this expert
+            mask = (flat_indices == i)
+            if mask.any():
+                # Get the original batch positions for scattering results later
+                # We use torch.where to get the indices into the flattened tensor,
+                # then integer divide by top_k to get the original batch index.
+                original_batch_pos = torch.where(mask)[0] // self.top_k
+
+                # Gather the inputs and weights for this expert's batch
+                expert_inputs = repeated_inputs[mask]
+                expert_weights = flat_weights[mask]
+                
+                # Run the expert on its batch of inputs
+                expert_output = expert(expert_inputs)
+
+                # Weight the outputs
+                weighted_output = expert_output * expert_weights.view(-1, 1, 1, 1)
+
+                # 4. Scatter (add) the results back to the correct positions
+                output.index_add_(0, original_batch_pos, weighted_output)
+        
+        return output
 
     def forward(self, x, y):
-        B, C, H, W = x.size()
         fusion_input = torch.cat([x, y], dim=1)
 
-        rgb_scores = self.rgb_gate(x)  # [B, rgb_experts]
-        hsi_scores = self.hsi_gate(y)  # [B, hsi_experts]
-        shared_scores = self.shared_gate(fusion_input)  # [B, shared_experts]
+        # Process each modality group using the vectorized helper
+        rgb_output = self._forward_moe(x, self.rgb_experts, self.rgb_gate)
+        hsi_output = self._forward_moe(y, self.hsi_experts, self.hsi_gate)
+        shared_output = self._forward_moe(fusion_input, self.shared_experts, self.shared_gate)
 
-        fused = torch.zeros_like(x)
-
-        # Top-k routing for each expert group
-        rgb_topk_val, rgb_topk_idx = torch.topk(rgb_scores, self.top_k, dim=1)
-        hsi_topk_val, hsi_topk_idx = torch.topk(hsi_scores, self.top_k, dim=1)
-        shared_topk_val, shared_topk_idx = torch.topk(shared_scores, self.top_k, dim=1)
-
-        for i in range(self.top_k):
-            for b in range(B):
-                rgb_weight = F.softmax(rgb_topk_val, dim=1)[b, i]
-                hsi_weight = F.softmax(hsi_topk_val, dim=1)[b, i]
-                shared_weight = F.softmax(shared_topk_val, dim=1)[b, i]
-
-                rgb_out = self.rgb_experts[rgb_topk_idx[b, i]](x[b].unsqueeze(0))
-                hsi_out = self.hsi_experts[hsi_topk_idx[b, i]](y[b].unsqueeze(0))
-                shared_out = self.shared_experts[shared_topk_idx[b, i]](fusion_input[b].unsqueeze(0))
-
-                fused[b] += rgb_weight * rgb_out.squeeze(0) + \
-                            hsi_weight * hsi_out.squeeze(0) + \
-                            shared_weight * shared_out.squeeze(0)
-
-        return fused
-
-
-class ModalitySpecificMoE2(nn.Module):
-    def __init__(self, in_channels, hidden_dim=256, rgb_experts=2, hsi_experts=2, shared_experts=2, top_k=1):
-        super(ModalitySpecificMoE2, self).__init__()
-        self.rgb_experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(in_channels, hidden_dim, 1),
-                nn.ReLU(),
-                nn.Conv2d(hidden_dim, in_channels, 1)
-            ) for _ in range(rgb_experts)
-        ])
-
-        self.hsi_experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(in_channels, hidden_dim, 1),
-                nn.ReLU(),
-                nn.Conv2d(hidden_dim, in_channels, 1)
-            ) for _ in range(hsi_experts)
-        ])
-
-        self.shared_experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(in_channels, hidden_dim, 1),
-                nn.ReLU(),
-                nn.Conv2d(hidden_dim, in_channels, 1)
-            ) for _ in range(shared_experts)
-        ])
-
-        self.rgb_gate = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(in_channels, rgb_experts)
-        )
-
-        self.hsi_gate = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(in_channels, hsi_experts)
-        )
-
-        self.shared_gate = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(in_channels, shared_experts)
-        )
-
-        self.top_k = top_k
-
-    def forward(self, x, y, xy):
-        B, C, H, W = x.size()
-        # fusion_input = torch.cat([x, y], dim=1)
-        fusion_input = xy
-
-        rgb_scores = self.rgb_gate(x)  # [B, rgb_experts]
-        hsi_scores = self.hsi_gate(y)  # [B, hsi_experts]
-        shared_scores = self.shared_gate(fusion_input)  # [B, shared_experts]
-
-        fused = torch.zeros_like(x)
-
-        # Top-k routing for each expert group
-        rgb_topk_val, rgb_topk_idx = torch.topk(rgb_scores, self.top_k, dim=1)
-        hsi_topk_val, hsi_topk_idx = torch.topk(hsi_scores, self.top_k, dim=1)
-        shared_topk_val, shared_topk_idx = torch.topk(shared_scores, self.top_k, dim=1)
-
-        for i in range(self.top_k):
-            for b in range(B):
-                rgb_weight = F.softmax(rgb_topk_val, dim=1)[b, i]
-                hsi_weight = F.softmax(hsi_topk_val, dim=1)[b, i]
-                shared_weight = F.softmax(shared_topk_val, dim=1)[b, i]
-
-                rgb_out = self.rgb_experts[rgb_topk_idx[b, i]](x[b].unsqueeze(0))
-                hsi_out = self.hsi_experts[hsi_topk_idx[b, i]](y[b].unsqueeze(0))
-                shared_out = self.shared_experts[shared_topk_idx[b, i]](fusion_input[b].unsqueeze(0))
-
-                fused[b] += rgb_weight * rgb_out.squeeze(0) + \
-                            hsi_weight * hsi_out.squeeze(0) + \
-                            shared_weight * shared_out.squeeze(0)
-
+        # Combine the results from all expert groups
+        fused = rgb_output + hsi_output + shared_output
+        
         return fused
     
+
+class Expert(nn.Module):
+    def __init__(self, dim, hidden_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, dim)
+        )
+
+    def forward(self, x):  # x: (B*N, C)
+        return self.net(x)
+
+
+class ModalitySpecificMoE_ViT(nn.Module):
+    def __init__(self, 
+                 in_channels,         # input dim (C)
+                 hidden_dim=256,     # hidden dim in expert
+                 num_experts=2,  # number of experts per modality
+                 top_k=2,        # top-k experts used
+                 shared_expert=False,
+                 dropout=0.0):
+        super().__init__()
+
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.shared_expert = shared_expert
+
+        # Experts per modality
+        self.rgb_experts = nn.ModuleList([Expert(in_channels, hidden_dim) for _ in range(num_experts)])
+        self.hsi_experts = nn.ModuleList([Expert(in_channels, hidden_dim) for _ in range(num_experts)])
+        self.shared_experts = nn.ModuleList([Expert(in_channels, hidden_dim) for _ in range(num_experts)]) if shared_expert else None
+
+        # Gating networks (shared across modalities)
+        self.rgb_gate = nn.Linear(in_channels, num_experts)
+        self.hsi_gate = nn.Linear(in_channels, num_experts)
+        self.shared_gate = nn.Linear(in_channels, num_experts) if shared_expert else None
+
+        self.dropout = nn.Dropout(dropout)
+
+    def route(self, x, gate_layer, experts):
+        # x: (B, C, N)
+        B, C, N = x.shape
+        x = x.permute(0, 2, 1).contiguous().view(B*N, C)  # (B*N, C)
+        scores = gate_layer(x)                            # (B*N, num_experts)
+        topk_scores, topk_indices = torch.topk(scores, self.top_k, dim=-1)  # (B*N, top_k)
+        topk_weights = F.softmax(topk_scores, dim=-1)                       # (B*N, top_k)
+
+        out = torch.zeros_like(x)
+        for i in range(self.top_k):
+            idx = topk_indices[:, i]
+            weight = topk_weights[:, i].unsqueeze(-1)  # (B*N, 1)
+            for j in range(self.num_experts):
+                mask = (idx == j)
+                if mask.sum() == 0:
+                    continue
+                x_j = x[mask]
+                out_j = experts[j](x_j)
+                out[mask] += weight[mask] * out_j
+
+        out = self.dropout(out)
+        out = out.view(B, N, C).permute(0, 2, 1).contiguous()  # (B, C, N)
+        return out
+
+    def forward(self, x_rgb, x_hsi, x_shared=None):
+        # x_rgb, x_hsi: (B, C, N), x_shared optional
+        out_rgb = self.route(x_rgb, self.rgb_gate, self.rgb_experts)
+        out_hsi = self.route(x_hsi, self.hsi_gate, self.hsi_experts)
+        
+        if self.shared_expert and x_shared is not None:
+            out_shared = self.route(x_shared, self.shared_gate, self.shared_experts)
+            out = out_rgb + out_hsi + out_shared  # or torch.cat([...], dim=1)
+        else:
+            out = out_rgb + out_hsi
+
+        return out  # (B, C, N)
+
+
 
 if __name__ == "__main__":
 	# a = torch.rand(2, 5, 3, 3)
@@ -560,7 +668,7 @@ if __name__ == "__main__":
     center = moefusion(xe4, ye4)
     print(center.shape)
 
-    moefusion = BiModalCrossAttentionFusion(in_channels=512)
+    moefusion = BiModalCrossAttentionFusion(dim=512)
     center = moefusion(xe4, ye4)
     print(center.shape)
 
@@ -576,4 +684,10 @@ if __name__ == "__main__":
     center = moefusion(xe4, ye4)
     print(center.shape)
 
+    xe4 = torch.rand(2, 512, 64)
+    ye4 = torch.rand(2, 512, 64)
+
+    moefusion = ModalitySpecificMoE_ViT(in_channels=512, hidden_dim=256)
+    center = moefusion(xe4, ye4)
+    print(center.shape)
 

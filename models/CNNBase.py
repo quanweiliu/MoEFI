@@ -114,13 +114,43 @@ class Model_base(nn.Module):
         # self.biModalCrossAtten = BiModalCrossAttentionFusion(dim=filters[3], num_heads=8, dropout=0.1, fuse_out_dim=filters[3])
         # self.AwMoE = ModalityAwareMoE(filters[3])
 
-        self.avgpool1 = nn.AdaptiveAvgPool2d(output_size=(1,1))
-        self.avgpool2 = nn.AdaptiveAvgPool2d(output_size=(1,1))
-        self.avgpool3 = nn.AdaptiveAvgPool2d(output_size=(1,1))
+        # self.avgpool1 = nn.AdaptiveAvgPool2d(output_size=(1,1))
+        # self.avgpool2 = nn.AdaptiveAvgPool2d(output_size=(1,1))
+        # self.avgpool3 = nn.AdaptiveAvgPool2d(output_size=(1,1))
 
         self.APooling2D1 = AttentionPooling2D(filters[3])  # [B, C, H, W] -> [B, C]
         self.APooling2D2 = AttentionPooling2D(filters[3])  # [B, C, H, W] -> [B, C]
         self.APooling2D3 = AttentionPooling2D(filters[3])  # [B, C, H, W] -> [B, C]
+
+
+    def get_visulization(self, x, y):
+        x_first, y_first = self.cross_block0(self.rgb_first(x), self.lidar_first(y))
+        # print("x_first", x_first.shape, "y_first", y_first.shape) # [64, 512, 11, 11]
+        xe1, ye1 = self.cross_block1(self.rgb_encoder1(x_first), self.lidar_encoder1(y_first))
+        # print("xe1", xe1.shape, "ye1", ye1.shape) # [64, 512, 11, 11]
+        xe2, ye2 = self.cross_block2(self.rgb_encoder2(xe1), self.lidar_encoder2(ye1))
+        # print("xe2", xe2.shape, "ye2", ye2.shape) # [64, 512, 6, 6]
+        # xe2 = self.dSpe(xe2)
+        # ye2 = self.dSpa(ye2)
+
+        xe3, ye3 = self.cross_block3(self.rgb_encoder3(xe2), self.lidar_encoder3(ye2))
+        # print("xe3", xe3.shape, "ye3", ye3.shape) # [64, 512, 3, 3]
+
+        xe4 = self.rgb_encoder4(xe3)
+        ye4 = self.lidar_encoder4(ye3)
+        # print("xe4", xe4.shape, "ye4", ye4.shape) # [64, 512, 2, 2]
+
+        ## center
+        # center = xe4 + ye4
+        # center = self.gated_fusion(xe4, ye4)
+        # center = self.AwMoE(xe4, ye4)
+        center = self.SpMoE(xe4, ye4)
+        # center = self.crossAtten(xe4, ye4)  # ye4 attends to xe4
+        # center = self.biModalCrossAtten(xe4, ye4)
+        # print(center.shape)
+
+        return xe4, ye4, center
+    
 
     def forward(self, x, y):
         x_first, y_first = self.cross_block0(self.rgb_first(x), self.lidar_first(y))
@@ -140,11 +170,11 @@ class Model_base(nn.Module):
         # print("xe4", xe4.shape, "ye4", ye4.shape) # [64, 512, 2, 2]
 
         ## center
-        center = xe4 + ye4
+        # center = xe4 + ye4
         # center = self.gated_fusion(xe4, ye4)
         # print("center1", center.shape)   # 64, 512, 2, 2
         # center = self.AwMoE(xe4, ye4)
-        # center = self.SpMoE(xe4, ye4)
+        center = self.SpMoE(xe4, ye4)
         # center = self.crossAtten(xe4, ye4)  # ye4 attends to xe4
         # print("center2", center.shape)   # 64, 512, 2 ,2
         # center = self.biModalCrossAtten(xe4, ye4)
