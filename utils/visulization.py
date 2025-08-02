@@ -74,9 +74,9 @@ def test_visulization(net, super_head, data_loader, args, groundTruth):
         predict_labels = test_preds.reshape(hight, width)
 
         # print(np.unique(predict_labels))
-        draw(predict_labels, os.path.join(args.result_dir + "full"))
+        draw(predict_labels, os.path.join(args.result_dir, "full"))
         predict_labels[groundTruth == 0] = 0
-        draw(predict_labels, os.path.join(args.result_dir + "pure"))    
+        draw(predict_labels, os.path.join(args.result_dir, "pure"))    
 
 def draw(label, name, scale: float = 4.0, dpi: int = 400, save_img=True):
     '''

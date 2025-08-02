@@ -1,10 +1,132 @@
-
 import torch
 from torch import nn
 import torch.nn.functional as F
 
 
-# 快速 FGSM 攻击风格的扰动
+# Heads
+class DINOHead(nn.Module):
+    def __init__(self, in_dim=512, out_dim=128):
+        super().__init__()
+        self.g1 = nn.Sequential(nn.Linear(in_dim, 256, bias=False), 
+                               nn.BatchNorm1d(256),
+                                nn.ReLU(inplace=True), 
+                                nn.Linear(256, out_dim, bias=True))
+        
+        self.g2 = nn.Sequential(nn.Linear(in_dim, 256, bias=False), 
+                               nn.BatchNorm1d(256),
+                                nn.ReLU(inplace=True), 
+                                nn.Linear(256, out_dim, bias=True))
+        
+        self.g3 = nn.Sequential(nn.Linear(in_dim, 256, bias=False), 
+                               nn.BatchNorm1d(256),
+                                nn.ReLU(inplace=True), 
+                                nn.Linear(256, out_dim, bias=True))
+    def forward(self, x, y, output=None):
+        x = self.g1(x)
+        y = self.g2(y)
+        if output is not None:
+            output = self.g3(output)
+        return x, y, output
+    
+
+class DINOHead2(nn.Module):
+    def __init__(self, in_dim=512, out_dim=128):
+        super().__init__()
+
+        self.g1 = nn.Sequential(
+                                nn.AdaptiveAvgPool2d(1),
+                                nn.Flatten(start_dim=1),
+                                nn.Linear(in_dim, 256, bias=False), 
+                                nn.BatchNorm1d(256),
+                                nn.ReLU(inplace=True), 
+                                nn.Linear(256, out_dim, bias=True))
+        
+        self.g2 = nn.Sequential(
+                                nn.AdaptiveAvgPool2d(1),
+                                nn.Flatten(start_dim=1),
+                                nn.Linear(in_dim, 256, bias=False), 
+                                nn.BatchNorm1d(256),
+                                nn.ReLU(inplace=True), 
+                                nn.Linear(256, out_dim, bias=True))
+        
+    def forward(self, x, y):
+        x = self.g1(x)
+        y = self.g2(y)
+        return x, y
+
+
+class FDGCHead(nn.Module):
+    def __init__(self, in_dim=128, class_num=16):
+        super(FDGCHead, self).__init__()
+        self.c = nn.Sequential(nn.Linear(in_dim, 512),
+                               nn.Dropout(0.5),
+                               nn.BatchNorm1d(512),
+                            #    nn.ReLU(inplace=True), 
+                               nn.Linear(512, 256),
+                               nn.Dropout(0.5),
+                               nn.BatchNorm1d(256),
+                            #    nn.ReLU(inplace=True), 
+                               nn.Linear(256, class_num))   #2048
+    def forward(self, x):
+        x = self.c(x)
+        return x
+
+
+class MS2_head(nn.Module):
+    def __init__(self, in_dim=256, class_num=16):
+        super(MS2_head, self).__init__()
+
+        self.out1 = nn.Linear(in_dim, class_num)
+        self.out2 = nn.Linear(in_dim, class_num)
+        self.out3 = nn.Linear(in_dim, class_num)
+
+    def forward(self, x1, x2):
+        out1 = self.out1(x1)
+        out2 = self.out2(x2)
+        x = x1 + x2
+        out3 = self.out3(x)
+        
+        return out1, out2, out3
+    
+
+class AttentionPooling1D(nn.Module):
+    def __init__(self, embed_dim):
+        super().__init__()
+        self.query = nn.Parameter(torch.randn(1, embed_dim))  # [1, D]
+        self.scale = embed_dim ** -0.5
+
+    def forward(self, x):
+        # x: [B, D, N]
+        B, D, N = x.shape
+        q = self.query.expand(B, -1)                          # [B, D]
+        k = x.permute(0, 2, 1)                                # [B, N, D]
+        attn = torch.bmm(k, q.unsqueeze(2)).squeeze(-1)       # [B, N]
+        attn = F.softmax(attn * self.scale, dim=-1)           # [B, N]
+        pooled = torch.bmm(x, attn.unsqueeze(-1)).squeeze(-1) # [B, D]
+        return pooled
+
+
+class AttentionPooling2D(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.query = nn.Parameter(torch.randn(1, in_channels))  # [1, C]
+        self.scale = in_channels ** -0.5
+
+    def forward(self, x):
+        # x: [B, C, H, W] → reshape → [B, C, N]
+        B, C, H, W = x.size()
+        N = H * W
+        x_flat = x.view(B, C, N)                      # [B, C, N]
+        x_flat_t = x_flat.permute(0, 2, 1)            # [B, N, C]
+
+        q = self.query.expand(B, -1)                  # [B, C]
+        attn = torch.bmm(x_flat_t, q.unsqueeze(2)).squeeze(-1)  # [B, N]
+        attn = F.softmax(attn * self.scale, dim=-1)             # [B, N]
+        pooled = torch.bmm(x_flat, attn.unsqueeze(-1)).squeeze(-1)  # [B, C]
+        return pooled
+
+
+# perturbation
 class AdversarialPerturbation(nn.Module):
     def __init__(self, epsilon=0.01):
         super().__init__()
@@ -15,7 +137,7 @@ class AdversarialPerturbation(nn.Module):
             return x
         perturbation = self.epsilon * grad.sign()
         return torch.clamp(x + perturbation, 0.0, 1.0)  # 确保数值有效
-    
+
 
 class DropBlock2D(nn.Module):
     def __init__(self, drop_prob=0.1, block_size=3):
@@ -39,15 +161,13 @@ class DropBlock2D(nn.Module):
             out = out * block_mask.numel() / block_mask.sum() # 被遮掉部分变成 0，那剩下的值就整体乘以一个系数，使期望值保持一致。
             return out
 
-
     def _compute_block_mask(self, mask):
+
         # 很巧妙：所有被中心点覆盖的 block_size×block_size 区域都被标为 1
         block_mask = F.max_pool2d(input=mask[:, None, :, :],
                                   kernel_size=(self.block_size, self.block_size),
                                   stride=(1, 1),
                                   padding=self.block_size // 2)
-
-
 
         if self.block_size % 2 == 0:
             block_mask = block_mask[:, :, :-1, :-1]
@@ -73,7 +193,6 @@ class DropSpectral(nn.Module):
             # 按样本、按通道随机
             drop_mask = torch.rand(B, C, 1, 1, device=x.device) > self.dropout_rate
 
-
         elif self.mode == "fixed":  # fixed mode
             # 全 batch 丢相同通道
             drop_mask = torch.ones(C, device=x.device)
@@ -84,26 +203,7 @@ class DropSpectral(nn.Module):
         return x * drop_mask
 
 
-class Gated_Fusion(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-
-        self.gate = nn.Sequential(
-            nn.Conv2d(2 * in_channels, in_channels, kernel_size=1, padding=0),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x, y):
-        out = torch.cat([x, y], dim=1)
-        gate = self.gate(out)
-
-        PG = x * gate
-        FG = y * (1 - gate)
-
-        # return torch.cat([FG, PG], dim=1)
-        return PG + FG  # 或者直接相加，取决于具体任务和实验结果
-    
-
+# fusion modules
 class CrossAttentionFusion(nn.Module):
     def __init__(self, dim=512, num_heads=8, dropout=0.1):
         super().__init__()
@@ -127,9 +227,8 @@ class CrossAttentionFusion(nn.Module):
         attn_out, _ = self.attn(q, k, v)          # [B, N, C]
         out = self.out_proj(attn_out)
         out = self.norm(out + a_flat)             # residual + norm
-
+        
         return out.permute(0, 2, 1).view(B, C, H, W)
-
 
 
 class BiModalCrossAttentionFusion(nn.Module):
@@ -183,89 +282,54 @@ class BiModalCrossAttentionFusion(nn.Module):
         return out
 
 
-class ModalitySpecificMoE(nn.Module):
-    def __init__(self, in_channels, hidden_dim=256, rgb_experts=2, hsi_experts=2, shared_experts=2, top_k=1):
-        super(ModalitySpecificMoE, self).__init__()
-        self.rgb_experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(in_channels, hidden_dim, 1),
-                nn.ReLU(),
-                nn.Conv2d(hidden_dim, in_channels, 1)
-            ) for _ in range(rgb_experts)
-        ])
 
-        self.hsi_experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(in_channels, hidden_dim, 1),
-                nn.ReLU(),
-                nn.Conv2d(hidden_dim, in_channels, 1)
-            ) for _ in range(hsi_experts)
-        ])
+# class Gated_Fusion(nn.Module):
+
+#     def __init__(self, in_channels):
+#         super().__init__()
+
+#         self.gate = nn.Sequential(
+#             nn.Conv2d(2 * in_channels, in_channels, kernel_size=1, padding=0),
+#             nn.Sigmoid(),
+#         )
+
+#     def forward(self, x, y):
+#         out = torch.cat([x, y], dim=1)
+#         G = self.gate(out)
+
+#         PG = x * G
+#         FG = y * (1 - G)
+
+#         return torch.cat([FG, PG], dim=1)
 
 
-        self.shared_experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(in_channels * 2, hidden_dim, 1),
-                nn.ReLU(),
-                nn.Conv2d(hidden_dim, in_channels, 1)
-            ) for _ in range(shared_experts)
-        ])
+class Gated_Fusion(nn.Module):
 
-        self.rgb_gate = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(in_channels, rgb_experts)
+    def __init__(self, in_channels):
+        super().__init__()
+
+        self.gate = nn.Sequential(
+            nn.Conv2d(2 * in_channels, in_channels, kernel_size=1, padding=0),
+            nn.Sigmoid(),
         )
-
-        self.hsi_gate = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(in_channels, hsi_experts)
-        )
-
-        self.shared_gate = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(in_channels * 2, shared_experts)
-        )
-
-        self.top_k = top_k
-
+        self.conv = nn.Conv2d(2 * in_channels, in_channels, kernel_size=1, padding=0)
 
     def forward(self, x, y):
-        B, C, H, W = x.size()
-        fusion_input = torch.cat([x, y], dim=1)
+        out = torch.cat([x, y], dim=1)
+        G = self.gate(out)
 
-        rgb_scores = self.rgb_gate(x)  # [B, rgb_experts]
-        hsi_scores = self.hsi_gate(y)  # [B, hsi_experts]
-        shared_scores = self.shared_gate(fusion_input)  # [B, shared_experts]
+        PG = x * G
+        FG = y * (1 - G)
 
-        fused = torch.zeros_like(x)
-        # Top-k routing for each expert group
+        fusion = torch.cat([FG, PG], dim=1)
+        fusion = self.conv(fusion)
 
-        rgb_topk_val, rgb_topk_idx = torch.topk(rgb_scores, self.top_k, dim=1)
-        hsi_topk_val, hsi_topk_idx = torch.topk(hsi_scores, self.top_k, dim=1)
-        shared_topk_val, shared_topk_idx = torch.topk(shared_scores, self.top_k, dim=1)
+        return fusion
 
-        for i in range(self.top_k):
-            for b in range(B):
-                rgb_weight = F.softmax(rgb_topk_val, dim=1)[b, i]
-                hsi_weight = F.softmax(hsi_topk_val, dim=1)[b, i]
-                shared_weight = F.softmax(shared_topk_val, dim=1)[b, i]
-
-                rgb_out = self.rgb_experts[rgb_topk_idx[b, i]](x[b].unsqueeze(0))
-                hsi_out = self.hsi_experts[hsi_topk_idx[b, i]](y[b].unsqueeze(0))
-                shared_out = self.shared_experts[shared_topk_idx[b, i]](fusion_input[b].unsqueeze(0))
-                fused[b] += rgb_weight * rgb_out.squeeze(0) + \
-                            hsi_weight * hsi_out.squeeze(0) + \
-                            shared_weight * shared_out.squeeze(0)
-
-        return fused
-
-
-class ModalityAwareMoE_sparse(nn.Module):
+        
+class ModalityAwareMoE(nn.Module):
     def __init__(self, in_channels, num_experts=4, hidden_dim=256, k=2):
-        super(ModalityAwareMoE_sparse, self).__init__()
+        super(ModalityAwareMoE, self).__init__()
         self.num_experts = num_experts
         self.k = k  # top-k sparse routing
 
@@ -275,6 +339,7 @@ class ModalityAwareMoE_sparse(nn.Module):
             nn.Flatten(),             # [B,C]
             nn.Linear(in_channels, num_experts)
         )
+        
         self.gate_y = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
@@ -317,41 +382,198 @@ class ModalityAwareMoE_sparse(nn.Module):
         return fused
 
 
+class ModalitySpecificMoE(nn.Module):
+    def __init__(self, in_channels, hidden_dim=256, rgb_experts=2, hsi_experts=2, shared_experts=2, top_k=1):
+        super(ModalitySpecificMoE, self).__init__()
+        self.rgb_experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(in_channels, hidden_dim, 1),
+                nn.ReLU(),
+                nn.Conv2d(hidden_dim, in_channels, 1)
+            ) for _ in range(rgb_experts)
+        ])
+
+        self.hsi_experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(in_channels, hidden_dim, 1),
+                nn.ReLU(),
+                nn.Conv2d(hidden_dim, in_channels, 1)
+            ) for _ in range(hsi_experts)
+        ])
+
+        self.shared_experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(in_channels * 2, hidden_dim, 1),
+                nn.ReLU(),
+                nn.Conv2d(hidden_dim, in_channels, 1)
+            ) for _ in range(shared_experts)
+        ])
+
+        self.rgb_gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, rgb_experts)
+        )
+
+        self.hsi_gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, hsi_experts)
+        )
+
+        self.shared_gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels * 2, shared_experts)
+        )
+
+        self.top_k = top_k
+
+    def forward(self, x, y):
+        B, C, H, W = x.size()
+        fusion_input = torch.cat([x, y], dim=1)
+
+        rgb_scores = self.rgb_gate(x)  # [B, rgb_experts]
+        hsi_scores = self.hsi_gate(y)  # [B, hsi_experts]
+        shared_scores = self.shared_gate(fusion_input)  # [B, shared_experts]
+
+        fused = torch.zeros_like(x)
+
+        # Top-k routing for each expert group
+        rgb_topk_val, rgb_topk_idx = torch.topk(rgb_scores, self.top_k, dim=1)
+        hsi_topk_val, hsi_topk_idx = torch.topk(hsi_scores, self.top_k, dim=1)
+        shared_topk_val, shared_topk_idx = torch.topk(shared_scores, self.top_k, dim=1)
+
+        for i in range(self.top_k):
+            for b in range(B):
+                rgb_weight = F.softmax(rgb_topk_val, dim=1)[b, i]
+                hsi_weight = F.softmax(hsi_topk_val, dim=1)[b, i]
+                shared_weight = F.softmax(shared_topk_val, dim=1)[b, i]
+
+                rgb_out = self.rgb_experts[rgb_topk_idx[b, i]](x[b].unsqueeze(0))
+                hsi_out = self.hsi_experts[hsi_topk_idx[b, i]](y[b].unsqueeze(0))
+                shared_out = self.shared_experts[shared_topk_idx[b, i]](fusion_input[b].unsqueeze(0))
+
+                fused[b] += rgb_weight * rgb_out.squeeze(0) + \
+                            hsi_weight * hsi_out.squeeze(0) + \
+                            shared_weight * shared_out.squeeze(0)
+
+        return fused
+
+
+class ModalitySpecificMoE2(nn.Module):
+    def __init__(self, in_channels, hidden_dim=256, rgb_experts=2, hsi_experts=2, shared_experts=2, top_k=1):
+        super(ModalitySpecificMoE2, self).__init__()
+        self.rgb_experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(in_channels, hidden_dim, 1),
+                nn.ReLU(),
+                nn.Conv2d(hidden_dim, in_channels, 1)
+            ) for _ in range(rgb_experts)
+        ])
+
+        self.hsi_experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(in_channels, hidden_dim, 1),
+                nn.ReLU(),
+                nn.Conv2d(hidden_dim, in_channels, 1)
+            ) for _ in range(hsi_experts)
+        ])
+
+        self.shared_experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(in_channels, hidden_dim, 1),
+                nn.ReLU(),
+                nn.Conv2d(hidden_dim, in_channels, 1)
+            ) for _ in range(shared_experts)
+        ])
+
+        self.rgb_gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, rgb_experts)
+        )
+
+        self.hsi_gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, hsi_experts)
+        )
+
+        self.shared_gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, shared_experts)
+        )
+
+        self.top_k = top_k
+
+    def forward(self, x, y, xy):
+        B, C, H, W = x.size()
+        # fusion_input = torch.cat([x, y], dim=1)
+        fusion_input = xy
+
+        rgb_scores = self.rgb_gate(x)  # [B, rgb_experts]
+        hsi_scores = self.hsi_gate(y)  # [B, hsi_experts]
+        shared_scores = self.shared_gate(fusion_input)  # [B, shared_experts]
+
+        fused = torch.zeros_like(x)
+
+        # Top-k routing for each expert group
+        rgb_topk_val, rgb_topk_idx = torch.topk(rgb_scores, self.top_k, dim=1)
+        hsi_topk_val, hsi_topk_idx = torch.topk(hsi_scores, self.top_k, dim=1)
+        shared_topk_val, shared_topk_idx = torch.topk(shared_scores, self.top_k, dim=1)
+
+        for i in range(self.top_k):
+            for b in range(B):
+                rgb_weight = F.softmax(rgb_topk_val, dim=1)[b, i]
+                hsi_weight = F.softmax(hsi_topk_val, dim=1)[b, i]
+                shared_weight = F.softmax(shared_topk_val, dim=1)[b, i]
+
+                rgb_out = self.rgb_experts[rgb_topk_idx[b, i]](x[b].unsqueeze(0))
+                hsi_out = self.hsi_experts[hsi_topk_idx[b, i]](y[b].unsqueeze(0))
+                shared_out = self.shared_experts[shared_topk_idx[b, i]](fusion_input[b].unsqueeze(0))
+
+                fused[b] += rgb_weight * rgb_out.squeeze(0) + \
+                            hsi_weight * hsi_out.squeeze(0) + \
+                            shared_weight * shared_out.squeeze(0)
+
+        return fused
     
 
-# if __name__=="__main__":
-#     # Example usage
+if __name__ == "__main__":
+	# a = torch.rand(2, 5, 3, 3)
+
+	# aug1 = DropSpectral(dropout_rate=0.5, mode="bernoulli")
+	# out1 = aug1(a)
+	# print(out1, out1.shape)
+
+	# aug2 = DropBlock2D(drop_prob=0.5, block_size=1)
+	# out2 = aug2(a)
+	# print(out2, out2.shape)
+    
+
+    xe4 = torch.rand(2, 512, 3, 3)
+    ye4 = torch.rand(2, 512, 3, 3)
+
+    moefusion = CrossAttentionFusion(dim=512, num_heads=8, dropout=0.1)
+    center = moefusion(xe4, ye4)
+    print(center.shape)
+
+    moefusion = BiModalCrossAttentionFusion(in_channels=512)
+    center = moefusion(xe4, ye4)
+    print(center.shape)
+
+    moefusion = Gated_Fusion(in_channels=512)
+    center = moefusion(xe4, ye4)
+    print(center.shape)
+
+    moefusion = ModalitySpecificMoE(in_channels=512, hidden_dim=256)
+    center = moefusion(xe4, ye4)
+    print(center.shape)
+
+    moefusion = ModalityAwareMoE(in_channels=512, hidden_dim=256)
+    center = moefusion(xe4, ye4)
+    print(center.shape)
 
 
-#     # import numpy as np
-#     # model=SEBlock(128)
-#     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-
-#     x = torch.randn(4, 144, 28, 28, device=device)
-#     y = torch.randint(low=0, high=10, size=(4, 28, 28), dtype=torch.long, device=device)
-
-#     model = LabelSmoothSoftmaxCEV1().to(device)
-#     # print(model)
-#     # output, x_put, y_put = model(x, y)
-#     loss = model(x, y)
-#     print("loss", loss)
-
-
-# if __name__ == "__main__":
-#     # Example usage
-#     x = torch.randn(2, 128, 8, 8)  # Example input tensor
-#     y = torch.randn(2, 128, 8, 8)  # Another input tensor
-
-#     gf = Gated_Fusion(in_channels=128)
-#     cross = CrossAttentionFusion(dim=128)
-#     bimodal_cross = BiModalCrossAttentionFusion(dim=128)
-#     moe = ModalitySpecificMoE(in_channels=128)
-
-
-#     output_moe = moe(x, y)
-#     output_gt = gf(x, y)
-#     output_cross = cross(x, y)
-#     output_bimodal_cross = bimodal_cross(x, y)
-
-
-#     print(output_moe.shape, output_gt.shape, output_cross.shape, output_bimodal_cross.shape)  # Should match the input shape

@@ -47,7 +47,7 @@ def get_data(args):
         # data_reader.draw(train_gt, os.path.join(args.result_dir, args.dataset_name + "train_gt"), save_img=True)
         # data_reader.draw(test_gt, os.path.join(args.result_dir, args.dataset_name + "test_gt"), save_img=True)
         plt.figure(figsize=(12, 8))
-        spl.imshow(classes=data_gt)
+        spl.imshow(classes=GT)
         plt.axis('off')  # 关闭坐标轴（等效于关闭刻度和边框）
         plt.tight_layout(pad=0)  # 去除额外空白边距
         plt.show()

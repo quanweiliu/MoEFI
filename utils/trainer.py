@@ -9,7 +9,7 @@ import torch
 
 
 def train(net, contra_head, super_head, awl, criterion1, criterion2, \
-        contrastive_loader, train_loader, train_optimizer, args):
+        criterion3, contrastive_loader, train_loader, train_optimizer, args):
     net.train()
     contra_head.train()
     super_head.train()
@@ -18,25 +18,25 @@ def train(net, contra_head, super_head, awl, criterion1, criterion2, \
     train_bar = enumerate(zip(contrastive_loader, train_loader))
     start_time = time.time()
     
-    for step, ((U_11, U_12, U_21, U_22, target), (S_1, S_2, label)) in train_bar:
+    for step, ((U_11, U_21, U_12, U_22, target), (S_1, S_2, label)) in train_bar:
+    # for step, ((U_11, U_12, U_21, U_22, target), (S_1, S_2, label)) in train_bar:
         U_11 = U_11.cuda()
-        U_12 = U_12.cuda()
         U_21 = U_21.cuda()
+        U_12 = U_12.cuda()
         U_22 = U_22.cuda()
-        target = target.cuda()
+        # target = target.cuda()
 
         # ########## contra ####################################>>>>>>>>>>>>>>>
-        u_xoutput_1, u_youtput_1, u_output_1 = net(U_11, U_12)         # 网络的直接输出都没用，要先经过contra_head 或者 super_head 才能行。
+        u_xoutput_1, u_youtput_1, u_output_1 = net(U_11, U_21)         # 网络的直接输出都没用，要先经过contra_head 或者 super_head 才能行。
         uc_xoutput_1, uc_youtput_1, uc_output_1 = contra_head(u_xoutput_1, u_youtput_1, u_output_1)
 
-        u_xoutput_2, u_youtput_2, u_output_2 = net(U_21, U_22)
+        u_xoutput_2, u_youtput_2, u_output_2 = net(U_12, U_22)
         uc_xoutput_2, uc_youtput_2, uc_output_2 = contra_head(u_xoutput_2, u_youtput_2, u_output_2)
 
-        contra_loss1 = criterion1(uc_xoutput_1, uc_youtput_1)
-        contra_loss2 = criterion1(uc_xoutput_2, uc_youtput_2)
-        contra_loss3 = criterion1(uc_output_1, uc_output_2)
+        contra_loss1 = criterion2(uc_xoutput_1, uc_youtput_1)
+        contra_loss2 = criterion2(uc_xoutput_2, uc_youtput_2)
+        contra_loss3 = criterion3(uc_output_1, uc_output_2, [uc_xoutput_1, uc_youtput_1, uc_xoutput_2, uc_youtput_2])
         loss_contra = contra_loss1 + contra_loss2 + contra_loss3
-        # loss_contra = contra_loss1 + contra_loss2
         loss_contra = args.lambda_contra * loss_contra
         ################ contra ################################<<<<<<<<<<<<<<
 
@@ -78,7 +78,7 @@ def train(net, contra_head, super_head, awl, criterion1, criterion2, \
         s_base1, s_base2, s_fuse = net(S_1, S_2)
         s_out = super_head(s_fuse)
 
-        loss_super = criterion2(s_out, label)
+        loss_super = criterion1(s_out, label)
         loss_super = args.lambda_super * loss_super
         # print(loss_super.item())
         ########## super ######################################<<<<<<<<<<<<<<
@@ -131,7 +131,7 @@ def train_morphFormer2(net, contra_head, super_head, awl, criterion1, criterion2
         U_12 = U_12.cuda()
         U_21 = U_21.cuda()
         U_22 = U_22.cuda()
-        target = target.cuda()
+        # target = target.cuda()
 
         # ########## contra ####################################>>>>>>>>>>>>>>>
         u_xoutput_1, u_youtput_1, u_output_1 = net(U_11, U_12)         # 网络的直接输出都没用，要先经过contra_head 或者 super_head 才能行。
@@ -233,7 +233,6 @@ def trainer(net, contra_head, super_head, awl, criterion2, criterion4, \
     contra_head.train()
     super_head.train()
     correct = 0
-
     train_bar = enumerate(zip(contrastive_loader, data_loader))
 
     for step, ((U_11, U_12, U_21, U_22, target), (S_1, S_2, label)) in train_bar:
@@ -243,10 +242,10 @@ def trainer(net, contra_head, super_head, awl, criterion2, criterion4, \
         U_22 = U_22.cuda(non_blocking=True)
 
     #     ########## contra ####################################>>>>>>>>>>>>>>>
-        u_out11, u_out_12, u_out_1f = net(U_11, U_21)
+        u_out11, u_out_12, u_out_1f = net(U_11, U_12)
         u_f11, u_f12, u_1f = contra_head(u_out11, u_out_12, u_out_1f)
 
-        u_out21, u_out_22, u_out_2f = net(U_12, U_22)
+        u_out21, u_out_22, u_out_2f = net(U_21, U_22)
         u_f21, u_f22, u_2f = contra_head(u_out21, u_out_22, u_out_2f)
 
         loss_contra1 = criterion4(u_f11, u_f12)

@@ -7,20 +7,20 @@
 #   https://github.com/facebookresearch/dino/blob/main/vision_transformer.py
 #   https://github.com/rwightman/pytorch-image-models/tree/master/timm/models/vision_transformer.py
 
-from functools import partial
 import math
 import logging
+from functools import partial
 from typing import Sequence, Tuple, Union, Callable
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.utils.checkpoint
 from torch.nn.init import trunc_normal_
+# from layers import Mlp, PatchEmbed, CustomSmallPatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTensorBlock as Block
+# from modules import ModalitySpecificMoE_ViT
 
 from .layers import Mlp, PatchEmbed, CustomSmallPatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTensorBlock as Block
-# from layers import Mlp, PatchEmbed, CustomSmallPatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTensorBlock as Block
-
+# from .modules import ModalitySpecificMoE_ViT
 
 logger = logging.getLogger("dinov2")
 
@@ -270,6 +270,7 @@ class DinoVisionTransformer(nn.Module):
             x = blk(x)
 
         x_norm = self.norm(x)
+        # print("x_norm shape:", x_norm.shape)  # [2, 37, 384]
         return {
             "x_norm_clstoken": x_norm[:, 0],
             "x_norm_regtokens": x_norm[:, 1 : self.num_register_tokens + 1],
@@ -333,10 +334,41 @@ class DinoVisionTransformer(nn.Module):
     def forward(self, *args, is_training=False, **kwargs):
         ret = self.forward_features(*args, **kwargs)
         if is_training:
+            # print("training")
             return ret
         else:
+            # print("Not training")
+            return self.head(ret["x_prenorm"])
             return self.head(ret["x_norm_clstoken"])
 
+def visualize_patch_token_map(image_np, x_norm_patchtokens, patch_size):
+    """
+    image_np: 原图 numpy (H, W, 3)
+    x_norm_patchtokens: tensor [1, N_patch, C]
+    patch_size: patch 的尺寸（比如 16）
+    """
+    B, N_patch, C = x_norm_patchtokens.shape
+    H, W, _ = image_np.shape
+    h_feat = H // patch_size
+    w_feat = W // patch_size
+
+    # 取每个 patch 的 token 向量 norm
+    heatmap = x_norm_patchtokens[0].norm(dim=-1).reshape(h_feat, w_feat)
+
+    # 归一化
+    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+
+    return heatmap
+
+    # # 插值到原图大小
+    # heatmap = cv2.resize(heatmap.cpu().numpy(), (W, H))
+
+    # # 可视化
+    # plt.imshow(image_np)
+    # plt.imshow(heatmap, cmap='jet', alpha=0.5)
+    # plt.axis('off')
+    # plt.title('Patch token activation heatmap')
+    # plt.show()
 
 def init_weights_vit_timm(module: nn.Module, name: str = ""):
     """ViT weight initialization, original timm impl (for reproducibility)"""
@@ -358,6 +390,63 @@ def load_dinov2_transformer_only(model, pretrained_path):
     print("✅ Transformer weights loaded (without patch_embed):", msg)
 
 
+class Vit_base(nn.Module):
+    def __init__(self, channell, channel2, img_size=6, patch_size=2, selected_layers=[0, 2, 5, 7], **kwargs):
+        super(Vit_base, self).__init__()
+        
+        self.model1 = DinoVisionTransformer(
+        img_size=img_size,
+        patch_size=patch_size,
+        in_chans=channell,
+        embed_dim=384,
+        depth=len(selected_layers),
+        num_heads=6,
+        mlp_ratio=4.0,
+        embed_layer=CustomSmallPatchEmbed,
+        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_chunks=0,
+    )
+        
+        self.model2 = DinoVisionTransformer(
+        img_size=img_size,
+        patch_size=patch_size,
+        in_chans=channel2,
+        embed_dim=384,
+        depth=len(selected_layers),
+        num_heads=6,
+        mlp_ratio=4.0,
+        embed_layer=CustomSmallPatchEmbed,
+        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_chunks=0,
+    )
+        # self.SpMoE = ModalitySpecificMoE_ViT(384)
+
+        # load_selected_blocks(self.model1, \
+        #                 "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCLPlus/weights/dinov2_vits14_pretrain.pth",
+        #                 selected_layers=selected_layers)
+        # load_selected_blocks(self.model2, \
+        #                 "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCLPlus/weights/dinov2_vits14_pretrain.pth",
+        #                 selected_layers=selected_layers)
+
+    def forward(self, x, y):
+        x1 = self.model1(x)
+        y1 = self.model2(y)
+        # print(x1.shape, y1.shape)  # 2, 37, 384
+
+        # center = self.SpMoE(x1, y1)   
+        center = x1 + y1
+        # print(x1.shape, y1.shape, center.shape)
+
+        xoutput = x1[:, 0]
+        youtput = y1[:, 0]
+        output = center[:, 0]
+
+        return xoutput, youtput, output
+        # return output
+
+
+
+
 def vit_hsi(in_chans=3, img_size=6, patch_size=2,  **kwargs):
     model = DinoVisionTransformer(
         img_size=img_size,
@@ -373,7 +462,9 @@ def vit_hsi(in_chans=3, img_size=6, patch_size=2,  **kwargs):
     )
     return model
 
-def vit_selected_hsi(in_chans=3, img_size=6, patch_size=2, selected_layers=[0, 2, 5, 7], **kwargs):
+
+# for vit_small
+def vit_selected_small(in_chans=3, img_size=6, patch_size=2, selected_layers=[0, 2, 5, 7], **kwargs):
     model = DinoVisionTransformer(
         img_size=img_size,
         patch_size=patch_size,
@@ -399,6 +490,22 @@ def vit_small(patch_size=16, num_register_tokens=0, **kwargs):
         block_fn=partial(Block, attn_class=MemEffAttention),
         num_register_tokens=num_register_tokens,
         **kwargs,
+    )
+    return model
+
+
+def vit_selected_base(in_chans=3, img_size=6, patch_size=2, selected_layers=[0, 2, 5, 7], **kwargs):
+    model = DinoVisionTransformer(
+        img_size=img_size,
+        patch_size=patch_size,
+        in_chans=in_chans,
+        embed_dim=768,
+        depth=len(selected_layers),
+        num_heads=12,
+        mlp_ratio=4.0,
+        embed_layer=CustomSmallPatchEmbed,
+        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_chunks=0,
     )
     return model
 
@@ -491,55 +598,40 @@ def load_selected_blocks(model, pretrained_path, selected_layers=[0, 2, 5, 7]):
     print("   State dict loading report:", msg)
 
 
-
 if __name__ == "__main__":
-
-
-    def vit_hsi(in_chans=3, img_size=6, patch_size=2,  **kwargs):
-        model = DinoVisionTransformer(
-            img_size=img_size,
-            patch_size=patch_size, 
-            in_chans=in_chans,
-            embed_dim=384,
-            depth=12,
-            num_heads=6,
-            mlp_ratio=4.0,
-            embed_layer=CustomSmallPatchEmbed,  # 替换 patch_embed
-            block_fn=partial(Block, attn_class=MemEffAttention),
-            block_chunks=0,
-        )
-        return model
-
-    img_size = 9
-    patch_size = 3
+    img_size = 12
     x = torch.randn(2, 3, img_size, img_size)  # batch size=2
+    y = torch.randn(2, 1, img_size, img_size)  # batch size=2
+    model = Vit_base(channell=3, channel2=1, img_size=img_size)
+    output1, outpu2, output3 = model(x, y)
+    print("output shape:", output1.shape, outpu2.shape, output3.shape)  # [2, 37, 384] from cls
+
+
+# if __name__ == "__main__":
+
+#     img_size = 9
+#     patch_size = 3
+#     x = torch.randn(2, 3, img_size, img_size)  # batch size=2
     
-    model = vit_hsi(img_size=img_size, patch_size=patch_size, in_chans=3)
+#     model = vit_hsi(img_size=img_size, patch_size=patch_size, in_chans=3)
 
+#     # 3. 加载权重：只加载 transformer 编码器层
 
-    # 3. 加载权重：只加载 transformer 编码器层
+#     # 示例调用（请替换你的路径）
+#     load_transformer(model, "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCL_competitive/weights/dinov2_vits14_pretrain.pth")
 
-    # 示例调用（请替换你的路径）
-    # load_transformer(model, "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCL_competitive/weights/dinov2_vits14_pretrain.pth")
+#     # 4. 模拟输入图像（5x5）
+#     with torch.no_grad():
+#         out = model(x)
+#         print("output shape:", out.shape)  # [2, 768] from cls token
 
-    # 4. 模拟输入图像（5x5）
-    with torch.no_grad():
-        out = model(x)
-        print("output shape:", out.shape)  # [2, 768] from cls token
+# ######################################################################################
 
+#     selected_layers = [0, 2, 5, 7]  # 从 dinov2 中选择的层
+#     model = vit_selected_small(in_chans=3, img_size=img_size, patch_size=patch_size, selected_layers=[0, 2, 5, 7])
+#     load_selected_blocks(model, "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCLPlus/weights/dinov2_vits14_pretrain.pth", selected_layers)
 
-#######################################################################################
-
-    img_size = 9
-    patch_size = 3
-    x = torch.randn(2, 3, img_size, img_size)  # batch size=2
-
-    selected_layers = [0, 2, 5, 7]  # 从 dinov2 中选择的层
-    model = vit_selected_hsi(in_chans=3, img_size=img_size, patch_size=patch_size, selected_layers=[0, 2, 5, 7])
-    # 加载指定层的权重
-    # load_selected_blocks(model, "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCL_competitive/weights/dinov2_vits14_pretrain.pth", selected_layers)
-
-    # 4. 模拟输入图像（5x5）
-    with torch.no_grad():
-        out = model(x)
-        print("output shape:", out.shape)  # [2, 768] from cls token
+#     # 4. 模拟输入图像（5x5）
+#     with torch.no_grad():
+#         out = model(x)
+#         print("output shape:", out.shape)  # [2, 768] from cls token

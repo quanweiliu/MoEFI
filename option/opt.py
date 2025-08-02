@@ -9,7 +9,7 @@ def get_args():
 
     # datasets
     parser.add_argument('--dataset_name', default="India Pines", type=str, help='network backbone')
-    parser.add_argument('--path_data', type=str, default="/home/leo/DatasetSMD/")
+    parser.add_argument('--path_data', type=str, default="/home/icclab/Documents/lqw/DatasetMMF")
     parser.add_argument('--print-data-info', action='store_true', default=False)
     parser.add_argument('--data_info_start', default=1, type=int)
     parser.add_argument('--remove_zero_labels', action='store_true', default=True)
@@ -51,7 +51,7 @@ def get_args():
     parser.add_argument('--awl', action='store_true', default=False)
 
     # train config
-    parser.add_argument('--batch_size', default=512, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--batch_size', default=64, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=50, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--tune_epochs', default=10, type=int, help='Number of sweeps over the dataset to train')
 

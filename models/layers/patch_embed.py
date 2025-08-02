@@ -64,7 +64,7 @@ class CustomSmallPatchEmbed(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         B, C, H, W = x.shape
-        print("PatchEmbed input", x.shape)           # [512, 3, 32, 32]
+        # print("PatchEmbed input", x.shape)           # [512, 3, 32, 32]
         patch_H, patch_W = self.patch_size
 
         assert H % patch_H == 0, f"Input image height {H} is not a multiple of patch height {patch_H}"
@@ -76,10 +76,10 @@ class CustomSmallPatchEmbed(nn.Module):
         # if pad_h > 0 or pad_w > 0:
         #     x = nn.functional.pad(x, (0, pad_w, 0, pad_h), mode='constant', value=0)
 
-        print("PatchEmbed input", x.shape)           # [512, 3, 32, 32]
+        # print("PatchEmbed input", x.shape)           # [512, 3, 32, 32]
         x = self.proj(x)  # -> [B, embed_dim, H', W']
 
-        print("PatchEmbed output", x.shape)          # [512, 4, 384]
+        # print("PatchEmbed output", x.shape)          # [512, 4, 384]
         H_out, W_out = x.shape[2], x.shape[3]
 
         x = x.flatten(2).transpose(1, 2)  # -> [B, N, D]  where N = H'*W'

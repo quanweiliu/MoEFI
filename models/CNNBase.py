@@ -11,13 +11,11 @@ from torch import nn
 from torchvision import models
 from functools import partial
 import torch.nn.functional as F
-# from modules2 import AttentionPooling2D, Gated_Fusion, CrossAttentionFusion, BiModalCrossAttentionFusion
-# from modules2 import DropBlock2D, DropSpectral, ModalitySpecificMoE, ModalityAwareMoE
+# from modules import DropBlock2D, DropSpectral, AttentionPooling2D
+# from modules import ModalitySpecificMoE, ModalityAwareMoE, Gated_Fusion, CrossAttentionFusion, BiModalCrossAttentionFusion
 
-
-from .modules2 import AttentionPooling2D, Gated_Fusion, CrossAttentionFusion, BiModalCrossAttentionFusion
-from .modules2 import DropBlock2D, DropSpectral, ModalitySpecificMoE, ModalityAwareMoE
-
+from .modules import DropBlock2D, DropSpectral, AttentionPooling2D
+from .modules import ModalitySpecificMoE, ModalityAwareMoE, Gated_Fusion, CrossAttentionFusion, BiModalCrossAttentionFusion
 
 nonlinearity = partial(F.relu, inplace=True)
 
@@ -115,7 +113,7 @@ class Model_base(nn.Module):
         # self.crossAtten = CrossAttentionFusion(dim=filters[3], num_heads=8, dropout=0.1)
         # self.biModalCrossAtten = BiModalCrossAttentionFusion(dim=filters[3], num_heads=8, dropout=0.1, fuse_out_dim=filters[3])
         # self.AwMoE = ModalityAwareMoE(filters[3])
-        
+
         self.avgpool1 = nn.AdaptiveAvgPool2d(output_size=(1,1))
         self.avgpool2 = nn.AdaptiveAvgPool2d(output_size=(1,1))
         self.avgpool3 = nn.AdaptiveAvgPool2d(output_size=(1,1))
@@ -133,6 +131,7 @@ class Model_base(nn.Module):
         # print("xe2", xe2.shape, "ye2", ye2.shape) # [64, 512, 6, 6]
         xe2 = self.dSpe(xe2)
         ye2 = self.dSpa(ye2)
+
         xe3, ye3 = self.cross_block3(self.rgb_encoder3(xe2), self.lidar_encoder3(ye2))
         # print("xe3", xe3.shape, "ye3", ye3.shape) # [64, 512, 3, 3]
 
@@ -157,10 +156,9 @@ class Model_base(nn.Module):
 
         xoutput = self.APooling2D1(xe4)  # [batch, 512]
         youtput = self.APooling2D2(ye4)
-        output = self.APooling2D3(center) 
+        output = self.APooling2D3(center)
 
         return xoutput, youtput, output
-        # return output
 
 
 if __name__=="__main__":
