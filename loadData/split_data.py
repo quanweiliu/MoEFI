@@ -1,108 +1,9 @@
 import torch
-import numpy as np
 import random
+import numpy as np
 
 
-class HyperX(torch.utils.data.Dataset):
-    """ Generic class for a hyperspectral scene """
-
-    def __init__(self, data11, data12, data2, gt, transform, patch_size=5, remove_zero_labels=True):
-        """
-        Args:
-            data: 3D hyperspectral image
-            gt: 2D array of labels
-            patch_size: int, size of the spatial neighbourhood
-            center_pixel: bool, set to True to consider only the label of the
-                          center pixel
-            data_augmentation: bool, set to True to perform random flips
-            supervision: 'full' or 'semi' supervised algorithms
-        """
-        super(HyperX, self).__init__()
-        self.data11 = data11
-        self.data12 = data12
-        self.data2 = data2
-        self.label = gt
-        self.transform = transform
-        self.patch_size = patch_size
-        self.ignored_labels = set()
-        self.center_pixel = True
-        self.remove_zero_labels = remove_zero_labels
-    
-        # print(supervision)
-        mask = np.ones_like(gt)
-        # print("mask", mask.shape) 
-        
-        x_pos, y_pos = np.nonzero(mask)
-        p = self.patch_size // 2
-
-        self.indices = np.array(
-            [
-                (x, y)
-                for x, y in zip(x_pos, y_pos)
-                if x >= p and x < data11.shape[0] - p and y >= p and y < data11.shape[1] - p
-            ]
-        )
-
-        self.labels = [self.label[x, y] for x, y in self.indices]
-
-        if self.remove_zero_labels:
-            self.indices = np.array(self.indices)
-            self.labels = np.array(self.labels)
-
-            self.indices = self.indices[self.labels>0]
-            self.labels = self.labels[self.labels>0]
-
-    def __len__(self):
-        return len(self.indices)
-
-    def __getitem__(self, index):
-        '''
-            x, y -> index
-            x1, y1 = x - 4, y - 4
-            x2, y2 = x, y
-        '''
-        x, y = self.indices[index]
-        x1, y1 = x - self.patch_size // 2, y - self.patch_size // 2
-        x2, y2 = x1 + self.patch_size, y1 + self.patch_size
-
-        data11 = self.data11[x1:x2, y1:y2].transpose((2, 0, 1))
-        data12 = self.data12[x1:x2, y1:y2].transpose((2, 0, 1))
-        data2 = self.data2[x1:x2, y1:y2].transpose((2, 0, 1))
-        label = self.label[x1:x2, y1:y2]
-
-        # # Copy the data into numpy arrays (PyTorch doesn't like numpy views)
-        # data11 = np.asarray(np.copy(data11).transpose((2, 0, 1)), dtype="float32")
-        # data12 = np.asarray(np.copy(data12).transpose((2, 0, 1)), dtype="float32")
-        # data2 = np.asarray(np.copy(data2).transpose((2, 0, 1)), dtype="float32")
-        # label = np.asarray(np.copy(label), dtype="int64")
-
-        # Load the data into PyTorch tensors
-        data11 = torch.from_numpy(data11)
-        data12 = torch.from_numpy(data12)
-        data2 = torch.from_numpy(data2)
-        label = torch.from_numpy(label)
-        # print(data11.shape)
-        # print(data12.shape)
-        # print(data2.shape)
-        # print(label.shape)
-
-        # Extract the center label if needed
-        if self.center_pixel and self.patch_size > 1:
-            label = label[self.patch_size // 2, self.patch_size // 2]
-        
-        if self.transform != None:
-            # print("transformed", )
-            data11 = self.transform(data11)
-            data12 = self.transform(data12)
-            data21 = self.transform(data2)
-            data22 = self.transform(data2)
-
-            return data11, data12, data21, data22, label
-        
-        else:
-            return data11, data12, data2, label
-
-
+# 不拆分高光谱图像
 class HyperX2(torch.utils.data.Dataset):
     """ Generic class for a hyperspectral scene """
 
@@ -125,17 +26,22 @@ class HyperX2(torch.utils.data.Dataset):
         self.patch_size = args.patch_size
         self.ignored_labels = set()
         self.center_pixel = True
-        self.contrastive = args.contrastive
+        self.mix = args.mix
         self.remove_zero_labels = args.remove_zero_labels
-
+    
+        # print(supervision)
         mask = np.ones_like(gt)
+        # print("mask", mask.shape) 
+        
         x_pos, y_pos = np.nonzero(mask)
         p = self.patch_size // 2
 
         self.indices = np.array(
             [
-                (x, y) for x, y in zip(x_pos, y_pos)
+                (x, y)
+                for x, y in zip(x_pos, y_pos)
                 if x > p and x < data1.shape[0] - p - 1 and y > p and y < data1.shape[1] - p - 1
+                # if x >= p and x < data1.shape[0] - p and y >= p and y < data1.shape[1] - p
             ]
         )
 
@@ -174,32 +80,36 @@ class HyperX2(torch.utils.data.Dataset):
         if self.center_pixel and self.patch_size > 1:
             label = label[self.patch_size // 2, self.patch_size // 2]
 
-        # 随机选另一个 index 构造 x_pair
-        if self.transform is not None and self.contrastive:
+
+        if self.transform and self.mix:
             # 随机采样不同 index 构造 x_pair
+            # print("requires_pair is True")
             rand_idx = random.randint(0, len(self.indices) - 1)
             x_p, y_p = self.indices[rand_idx]
             xp1, yp1 = x_p - self.patch_size // 2, y_p - self.patch_size // 2
             xp2, yp2 = xp1 + self.patch_size, yp1 + self.patch_size
-            data_pair = self.data1[xp1:xp2, yp1:yp2].transpose((2, 0, 1))
-            data_pair = torch.from_numpy(data_pair)
-            data11 = self.transform(data1, data_pair)
-            data12 = self.transform(data1, data_pair)
+            data_pair1 = self.data1[xp1:xp2, yp1:yp2].transpose((2, 0, 1))
+            data_pair1 = torch.from_numpy(data_pair1)
 
-            data21 = self.transform(data2)
-            data22 = self.transform(data2)
+            # data_pair2 = self.data2[xp1:xp2, yp1:yp2].transpose((2, 0, 1))
+            # data_pair2 = torch.from_numpy(data_pair2)
+            data11 = self.transform[1](data1, data_pair1)
+            data21 = self.transform[0](data2)
+            data12 = self.transform[1](data1, data_pair1)
+            data22 = self.transform[0](data2)
+
             return data11, data21, data12, data22, label
-            
-        elif self.transform is not None:
-            data1 = self.transform(data1)
-            data2 = self.transform(data2)
-            return data1, data2, label
 
+        elif self.transform:
+            data1 = self.transform[0](data1)
+            data2 = self.transform[0](data2)
+
+            return data1, data2, label
         else:
             return data1, data2, label
         
 
-# 单模态，多模态，多尺度
+# 多尺度图像
 class HyperX3(torch.utils.data.Dataset):
     """ Generic class for a hyperspectral scene """
 
@@ -213,7 +123,6 @@ class HyperX3(torch.utils.data.Dataset):
                           center pixel
             data_augmentation: bool, set to True to perform random flips
             supervision: 'full' or 'semi' supervised algorithms
-            mixture_augmentation  不能用
         """
         super(HyperX3, self).__init__()
         self.data1 = data1
@@ -235,7 +144,8 @@ class HyperX3(torch.utils.data.Dataset):
             [
                 (x, y) for x, y in zip(x_pos, y_pos)
                 # if x > p and x < data.shape[0] - p and y > p and y < data.shape[1] - p
-                if x >= p and x < data1.shape[0] - p and y >= p and y < data1.shape[1] - p
+                if x > p and x < data1.shape[0] - p - 1 and y > p and y < data1.shape[1] - p - 1
+                # if x >= p and x < data1.shape[0] - p and y >= p and y < data1.shape[1] - p
             ]
         )
         self.labels = [self.label[x, y] for x, y in self.indices]
@@ -296,7 +206,6 @@ class HyperX3(torch.utils.data.Dataset):
             # label3 = label3[self.patch_sizeX3 // 2, self.patch_sizeX3 // 2]
         
         if self.transform != None:
-            # print("transformed", )
             data111 = self.transform(data11)
             data112 = self.transform(data11)
             data121 = self.transform(data12)
@@ -320,7 +229,7 @@ class HyperX3(torch.utils.data.Dataset):
                 return data11, data12, data13, data21, data22, data23, label
             else:
                 return data11, data12, data13, label
-            
+
 
 def sample_gt(gt, train_num=50, train_ratio=0.1, mode='random'):
     """Extract a fixed percentage of samples from an array of labels.
@@ -337,7 +246,7 @@ def sample_gt(gt, train_num=50, train_ratio=0.1, mode='random'):
     # print("test_gt", test_gt.shape)
 
     if mode == 'number':
-        print("split_type: ", mode, "\ntrain_number: ", train_num)
+        print("split_type: ", mode, "train_number: ", train_num)
         sample_num = train_num
         for c in np.unique(gt):
             if c == 0:
@@ -363,7 +272,7 @@ def sample_gt(gt, train_num=50, train_ratio=0.1, mode='random'):
             test_gt[tuple(test_indices)] = gt[tuple(test_indices)]
 
     # elif mode == 'ratio':
-    #     print("split_type: ", mode, "\ntrain_ratio: ", train_ratio)
+    #     print("split_type: ", mode, "train_ratio: ", train_ratio)
     #     for c in np.unique(gt):
     #         if c == 0:
     #           continue
@@ -387,18 +296,19 @@ def sample_gt(gt, train_num=50, train_ratio=0.1, mode='random'):
 
 
     elif mode == 'ratio':
-            # unique_classes = np.unique(gt)
-            # unique_classes = unique_classes[unique_classes != 0]  # skip background (0)
+            unique_classes = np.unique(gt)
+            unique_classes = unique_classes[unique_classes != 0]  # skip background (0)
 
             train_coords = []
             test_coords = []
+            random.seed(23)
 
-            for c in np.unique(gt):
+            for c in unique_classes:
                 class_coords = list(zip(*np.where(gt == c)))
                 n_total = len(class_coords)
+                random.shuffle(class_coords)
                 n_train = int(np.round(train_ratio * n_total))
-                # random.seed(23)
-                # random.shuffle(class_coords)
+                
                 train_coords.extend(class_coords[:n_train])
                 test_coords.extend(class_coords[n_train:])
 
@@ -414,8 +324,9 @@ def sample_gt(gt, train_num=50, train_ratio=0.1, mode='random'):
             # train_set = np.column_stack((train_indices[0], train_indices[1], train_label))
             # test_set = np.column_stack((test_indices[0], test_indices[1], test_label))
 
+
     # elif mode == 'disjoint':
-    #     print("split_type: ", mode, "\ntrain_ratio: ", train_ratio)
+    #     print("split_type: ", mode, "train_ratio: ", train_ratio)
     #     train_gt = np.copy(gt)
     #     test_gt = np.copy(gt)
     #     for c in np.unique(gt):
@@ -434,7 +345,6 @@ def sample_gt(gt, train_num=50, train_ratio=0.1, mode='random'):
     #         train_gt[mask] = 0
     #     test_gt[train_gt > 0] = 0
 
-
     elif mode == 'disjoint':
         print("split_type: ", mode, "\ntrain_ratio: ", train_ratio)
         train_gt = np.copy(gt)
@@ -445,12 +355,6 @@ def sample_gt(gt, train_num=50, train_ratio=0.1, mode='random'):
                 continue  # 忽略背景类
             mask = gt == c
             total = np.count_nonzero(mask)
-            
-            if total < 2:
-                print(f"[Warning] Class {c} has less than 2 samples. Skipping.")
-                train_gt[mask] = 0
-                test_gt[mask] = 0
-                continue
             
             for x in range(gt.shape[0]):
                 first_half_count = np.count_nonzero(mask[:x, :])
@@ -485,6 +389,7 @@ def sample_gt(gt, train_num=50, train_ratio=0.1, mode='random'):
         raise ValueError("{} sampling is not implemented yet.".format(mode))
 
     return train_gt, test_gt
+
 
 
 

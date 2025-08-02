@@ -169,69 +169,34 @@ class Solarization(object):
             return img
 
 
-# class DataAugmentationDINO(object):
-#     def __init__(self, randCrop=28, local_crops_number=0):
-#         # first global crop
-#         self.global_transfo1 = transforms.Compose([
-#                 transforms.RandomResizedCrop(randCrop, antialias=True, interpolation=InterpolationMode.BICUBIC),
-#                 transforms.RandomHorizontalFlip(p=0.5),
-#                 transforms.RandomVerticalFlip(p=0.5),
-#                 # transforms.RandomRotation(90),
-#                 transforms.GaussianBlur((3)),
-#                 # transforms.RandomErasing(0.5)
-#                 # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-#                 ])
-#         # second global crop
-#         self.global_transfo2 = transforms.Compose([
-#                 transforms.RandomResizedCrop(randCrop, antialias=True, interpolation=InterpolationMode.BICUBIC),
-#                 transforms.RandomHorizontalFlip(p=0.5),
-#                 transforms.RandomVerticalFlip(p=0.5),
-#                 # transforms.RandomRotation(90)
-#                 transforms.GaussianBlur((3)),
-#                 # transforms.RandomErasing(0.5)
-#                 # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-
-#                 ])
-#         # transformation for the local small crops
-#         self.local_crops_number = local_crops_number
-#         self.local_transfo = transforms.Compose([
-#                 # transforms.RandomResizedCrop(24, antialias=True, interpolation=InterpolationMode.BICUBIC),
-#                 transforms.RandomHorizontalFlip(p=0.5),
-#                 transforms.RandomVerticalFlip(p=0.5),
-#                 # GaussianBlur(1.0),
-#                 # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-#                 ])
-
-#     def __call__(self, image):
-#         crops = []
-#         crops.append(self.global_transfo1(image))
-#         crops.append(self.global_transfo2(image))
-#         # for _ in range(self.local_crops_number):
-#         #     crops.append(self.local_transfo(image))
-#         return crops
-
-
 class DataAugmentation(object):
     def __init__(self, args):
-        # first global crop
         self.global_transfo = transforms.Compose([
-                # transforms.RandomResizedCrop(randCrop, antialias=True, interpolation=InterpolationMode.BICUBIC),
-                # transforms.RandomCrop(args.randomCrop, padding=1, padding_mode='reflect'),
+                # transforms.RandomResizedCrop(args.randCrop, antialias=True, interpolation=InterpolationMode.BICUBIC),
                 transforms.RandomCrop(args.randomCrop),
                 transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomVerticalFlip(p=0.5),
-                # AddNoise(),
-                # SpectralDropout(),
-                # SpectralShift(),
-                # transforms.RandomRotation(90),
+                # transforms.RandomRotation(90)
                 # transforms.GaussianBlur((3)),
                 # transforms.RandomErasing(0.5)
+                # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
                 ])
+    def __call__(self, image):
+        return self.global_transfo(image)
 
-    def __call__(self, image, x_pair=None):
 
-        image = self.global_transfo(image)
-        # if x_pair is not None:
-        #     image = Spectral_mixing()(image, x_pair)
-        #     image = Spectral_cutmix()(image, x_pair)
-        return image
+class DataAugmentation2(object):
+    def __init__(self, args):
+        self.global_transfo = transforms.Compose([
+                transforms.RandomCrop(args.randomCrop),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomVerticalFlip(p=0.5),
+
+                SpectralDropout(p=0.5, dropout_rate=0.1, mode="bernoulli"),
+                AddNoise(p=0.5, noise_std=0.01),
+                SpectralShift(p=0.5),
+                ])
+    def __call__(self, image, img_pair):
+        image = Spectral_mixing(p=0.5, mix_band=1)(image, img_pair)
+        image = Spectral_cutmix(p=0.5, mix_band=1)(image, img_pair)
+        return self.global_transfo(image)
