@@ -141,10 +141,10 @@ class Model_base(nn.Module):
         # print("xe4", xe4.shape, "ye4", ye4.shape) # [64, 512, 2, 2]
 
         ## center
-        # center = xe4 + ye4
+        center = xe4 + ye4
         # center = self.gated_fusion(xe4, ye4)
         # center = self.AwMoE(xe4, ye4)
-        center = self.SpMoE(xe4, ye4)
+        # center = self.SpMoE(xe4, ye4)
         # center = self.crossAtten(xe4, ye4)  # ye4 attends to xe4
         # center = self.biModalCrossAtten(xe4, ye4)
         # print(center.shape)
@@ -170,11 +170,11 @@ class Model_base(nn.Module):
         # print("xe4", xe4.shape, "ye4", ye4.shape) # [64, 512, 2, 2]
 
         ## center
-        # center = xe4 + ye4
+        center = xe4 + ye4
         # center = self.gated_fusion(xe4, ye4)
         # print("center1", center.shape)   # 64, 512, 2, 2
         # center = self.AwMoE(xe4, ye4)
-        center = self.SpMoE(xe4, ye4)
+        # center = self.SpMoE(xe4, ye4)
         # center = self.crossAtten(xe4, ye4)  # ye4 attends to xe4
         # print("center2", center.shape)   # 64, 512, 2 ,2
         # center = self.biModalCrossAtten(xe4, ye4)
