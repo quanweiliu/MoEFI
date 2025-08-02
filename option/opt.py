@@ -4,7 +4,7 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser(description='Deep Multiview Learning for HSI classification')
     # general
-    parser.add_argument('--backbone', default="vit", type=str, help='network backbone')
+    parser.add_argument('--backbone', default="resNet2", type=str, help='network backbone')
     parser.add_argument('--depth', default=4, type=int, help="vit depth")
 
     # datasets
@@ -13,8 +13,8 @@ def get_args():
     parser.add_argument('--print-data-info', action='store_true', default=False)
     parser.add_argument('--data_info_start', default=1, type=int)
     parser.add_argument('--remove_zero_labels', action='store_true', default=True)
-    parser.add_argument('--patch_size', default=25, type=int, help='the number of patch size')
-    parser.add_argument('--components', default=10, type=int, help='the number of train samples')      # 32 / 10
+    parser.add_argument('--patch_size', default=13, type=int, help='the number of patch size')
+    parser.add_argument('--components', default=15, type=int, help='the number of train samples')      # 32 / 10
     parser.add_argument('--train_num', default=100, type=int, help='the number of train samples')
     parser.add_argument('--train_ratio', default=0.1, type=float, help='the ratio of train samples')
     parser.add_argument('--val_num', default=0, type=int, help='the number of validation samples')
@@ -42,11 +42,12 @@ def get_args():
     # base 512, fdgc 128, vit 126, vit_gcn 64
     parser.add_argument('--feature_dim', default=126, type=int, help='Feature dim for latent vector')
     parser.add_argument('--temperature', default=0.5, type=float, help='Temperature used in softmax')
+    parser.add_argument('--lb_smooth', default=0.1, type=float, help='Label smoothing')
 
     # loss ratio
     parser.add_argument('--learning_rate', default=1e-3, type=float, help='learning_rate')
-    parser.add_argument('--weight_decay', default=1e-4, type=float, help='weight_decay')
-    parser.add_argument('--lambda_contra', default=1, type=int, help='Feature dim for latent vector')
+    parser.add_argument('--weight_decay', default=1e-3, type=float, help='weight_decay')
+    parser.add_argument('--lambda_contra', default=0.1, type=int, help='Feature dim for latent vector')
     parser.add_argument('--lambda_super', default=1, type=float, help='Temperature used in softmax')
     parser.add_argument('--awl', action='store_true', default=False)
 

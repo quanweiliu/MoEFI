@@ -7,39 +7,6 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report,cohen_kappa_score
 
 
-def tester(net, super_head, criterion2, data_loader, args):
-    net.eval()
-
-    super_head.eval()
-    test_preds = []
-    targets = []
-    correct = 0
-
-    with torch.no_grad():
-        for S_11, S_2, target in data_loader:
-            target = target - 1
-            S_11 = S_11.to(args.device)
-            S_2 = S_2.to(args.device)
-            target = target.to(args.device)
-                
-            s_out1, s_out2, s_outf = net(S_11, S_2)
-            s_out = super_head(s_outf)
-
-            test_loss = criterion2(s_out, target).item()
-            pred = s_out.data.max(1, keepdim=True)[1]
-            # test_pred = torch.argmax(s_out, dim=1)  # 这一行和上面的实现效果是一样的
-
-            correct += pred.eq(target.data.view_as(pred)).sum()
-            test_preds.append(pred.cpu())
-            targets.append(target.cpu())
-
-        test_accuracy = (100. * correct / len(data_loader.dataset)).item()
-
-    return test_loss, test_preds, targets, round(test_accuracy, 4)
-
-
-
-
 def test_resNet2(net, super_head, criterion2, data_loader, args, groundTruth=None, visulation=False):
     net.eval()
     super_head.eval()
@@ -91,10 +58,9 @@ def test_resNet2(net, super_head, criterion2, data_loader, args, groundTruth=Non
     return test_loss, test_preds, targets, round(test_accuracy, 2), round(test_time, 2)
 
 
-def test_morphFormer2(net, super_head, criterion2, data_loader, args, groundTruth=None, visulation=False):
+def test_MS2CANet(net, super_head, criterion1, data_loader, args):
     net.eval()
     super_head.eval()
-    
     test_preds = []
     targets = []
     correct = 0
@@ -109,142 +75,23 @@ def test_morphFormer2(net, super_head, criterion2, data_loader, args, groundTrut
             target = target.to(args.device)
                 
             s_base1, s_base2, s_fuse = net(S_1, S_2)
-            s_out = super_head(s_fuse)
-
-            test_loss = criterion2(s_out, target).item()
-            test_pred = s_out.data.max(1, keepdim=True)[1]
+            out_e1, out_e2, out_e3 = super_head(s_base1, s_base2)
+            out_e = out_e1 + out_e2 + out_e3
+    
+            test_loss = criterion1(out_e, target).item()
+            test_pred = out_e.data.max(1, keepdim=True)[1]
             # test_pred = torch.argmax(s_out, dim=1)  # 这一行和上面的实现效果是一样的
 
             correct += test_pred.eq(target.data.view_as(test_pred)).cpu().sum()
             test_preds.append(test_pred.cpu())
             targets.append(target.cpu())
 
-        test_accuracy = 100. * correct.item() / len(data_loader.dataset)
+        test_accuracy = (100. * correct / len(data_loader.dataset)).item()
         # print('Accuracy: {}/{} ({:.2f}%)\n'.format(
         #             correct, len(data_loader.dataset), test_accuracy))
     test_time = time.time() - start_time
 
-    if visulation and groundTruth.any() != None:
-        hight, width = groundTruth.shape
-        test_preds = torch.cat(test_preds, dim=0).numpy()
-        predict_labels = test_preds.reshape(hight, width)
-
-        # print(np.unique(predict_labels))
-        draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy, 2)) + "_knn_full"))
-        # 背景像元置为 0，因为 pred 预测了所有的像元，但是背景像元并不需要画出来
-        for i in range(hight):
-            for j in range(width):
-                if groundTruth[i][j] == 0:
-                    predict_labels[i][j] = 0
-
-        draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy, 2)) + "_knn_label"))    
-
-    return test_loss, test_preds, targets, round(test_accuracy, 2), round(test_time, 2)
-
-
-def linear_test_cnn(net, super_head, criterion2, data_loader, args, groundTruth=None, visulation=False):
-    net.eval()
-    super_head.eval()
-    
-    test_losses = []
-    test_preds = []
-    targets = []
-    correct = 0
-
-    with torch.no_grad():
-        for S_11, S_12, S_2, target in data_loader:
-        # for data, _, target in data_loader:
-            target = target - 1
-            S_11 = S_11.to(args.device)
-            S_12 = S_12.to(args.device)
-            S_2 = S_2.to(args.device)
-            target = target.to(args.device)
-                
-            s_out1, s_out_11, s_out_21 = net(S_11, S_2)
-            s_out2, s_out_11, s_out_21 = net(S_12, S_2)
-            s_out_1 = super_head(s_out1)
-            s_out_2 = super_head(s_out2)
-            s_out = s_out_1 + s_out_2
-
-            test_loss = criterion2(s_out, target).item()
-            test_pred = s_out.data.max(1, keepdim=True)[1]
-            # test_pred = torch.argmax(s_out, dim=1)  # 这一行和上面的实现效果是一样的
-
-            correct += test_pred.eq(target.data.view_as(test_pred)).cpu().sum()
-            test_preds.append(test_pred.cpu())
-            test_losses.append(test_loss)
-            targets.append(target.cpu())
-
-        test_accuracy = (100. * correct / len(data_loader.dataset)).item()
-        # print('Accuracy: {}/{} ({:.2f}%)\n'.format(correct, len(data_loader.dataset), test_accuracy))
-        
-    if visulation and groundTruth.any() != None:
-        hight, width = groundTruth.shape
-        test_preds = torch.cat(test_preds, dim=0).numpy()
-        predict_labels = test_preds.reshape(hight, width)
-
-        # print(np.unique(predict_labels))
-        draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy.item(), 4)) + "_knn_full"))
-        # 背景像元置为 0，因为 pred 预测了所有的像元，但是背景像元并不需要画出来
-        for i in range(hight):
-            for j in range(width):
-                if groundTruth[i][j] == 0:
-                    predict_labels[i][j] = 0
-
-        draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy.item(), 4)) + "_knn_label"))    
-
-    return test_losses, test_preds, correct, targets, round(test_accuracy, 4)
-
-
-def linear_test_cnn2(net, super_head, criterion2, data_loader, args, groundTruth=None, visulation=False):
-    net.eval()
-    super_head.eval()
-    
-    test_losses = []
-    test_preds = []
-    targets = []
-    correct = 0
-
-    with torch.no_grad():
-        for S_11, S_2, target in data_loader:
-        # for data, _, target in data_loader:
-            target = target - 1
-            S_11 = S_11.to(args.device)
-            S_2 = S_2.to(args.device)
-            target = target.to(args.device)
-                
-            s_out1, s_out_11, s_out_21 = net(S_11, S_2)
-            s_out_1 = super_head(s_out1)
-            s_out = s_out_1
-
-            test_loss = criterion2(s_out, target).item()
-            test_pred = s_out.data.max(1, keepdim=True)[1]
-            # test_pred = torch.argmax(s_out, dim=1)  # 这一行和上面的实现效果是一样的
-
-            correct += test_pred.eq(target.data.view_as(test_pred)).cpu().sum()
-            test_preds.append(test_pred.cpu())
-            test_losses.append(test_loss)
-            targets.append(target.cpu())
-
-        test_accuracy = (100. * correct / len(data_loader.dataset)).item()
-        # print('Accuracy: {}/{} ({:.2f}%)\n'.format(correct, len(data_loader.dataset), test_accuracy))
-        
-    if visulation and groundTruth.any() != None:
-        hight, width = groundTruth.shape
-        test_preds = torch.cat(test_preds, dim=0).numpy()
-        predict_labels = test_preds.reshape(hight, width)
-
-        # print(np.unique(predict_labels))
-        draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy.item(), 4)) + "_knn_full"))
-        # 背景像元置为 0，因为 pred 预测了所有的像元，但是背景像元并不需要画出来
-        for i in range(hight):
-            for j in range(width):
-                if groundTruth[i][j] == 0:
-                    predict_labels[i][j] = 0
-
-        draw(predict_labels, os.path.join(args.result_dir, str(round(test_accuracy.item(), 4)) + "_knn_label"))    
-
-    return test_losses, test_preds, correct, targets, round(test_accuracy, 4)
+    return test_loss, test_preds, targets, round(test_accuracy, 4), round(test_time, 4)
 
 
 def linear_test_ms2ca(net, super_head, criterion2, data_loader, args, groundTruth=None, visulation=False):

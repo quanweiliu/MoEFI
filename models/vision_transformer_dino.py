@@ -391,7 +391,7 @@ def load_dinov2_transformer_only(model, pretrained_path):
 
 
 class Vit_base(nn.Module):
-    def __init__(self, channell, channel2, img_size=6, patch_size=2, selected_layers=[0, 2, 5, 7], **kwargs):
+    def __init__(self, channell, channel2, img_size=6, patch_size=2, selected_layers=[0,1,2,3,4,5,6,7,8,9,10,11], **kwargs):
         super(Vit_base, self).__init__()
         
         self.model1 = DinoVisionTransformer(
@@ -419,22 +419,32 @@ class Vit_base(nn.Module):
         block_fn=partial(Block, attn_class=MemEffAttention),
         block_chunks=0,
     )
-        self.SpMoE = ModalitySpecificMoE_ViT(384)
+        # adjust along the input image size
+        # self.SpMoE = ModalitySpecificMoE_ViT(10)
 
-        # load_selected_blocks(self.model1, \
-        #                 "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCLPlus/weights/dinov2_vits14_pretrain.pth",
-        #                 selected_layers=selected_layers)
-        # load_selected_blocks(self.model2, \
-        #                 "/home/icclab/Documents/lqw/Multimodal_Classification/KnowCLPlus/weights/dinov2_vits14_pretrain.pth",
-        #                 selected_layers=selected_layers)
+        load_selected_blocks(self.model1, \
+                        "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrain/dinov2_vits14_pretrain.pth",
+                        selected_layers=selected_layers)
+        load_selected_blocks(self.model2, \
+                        "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrain/dinov2_vits14_pretrain.pth",
+                        selected_layers=selected_layers)
+
+    def get_visulization(self, x, y):
+        x1 = self.model1(x)
+        y1 = self.model2(y)
+        # print(x1.shape, y1.shape)  # 2, 37, 384
+        center = x1 + y1
+
+        return x1, y1, center
+    
 
     def forward(self, x, y):
         x1 = self.model1(x)
         y1 = self.model2(y)
         # print(x1.shape, y1.shape)  # 2, 37, 384
 
-        # center = self.SpMoE(x1, y1)   
         center = x1 + y1
+        # center = self.SpMoE(x1, y1)   
         # print(x1.shape, y1.shape, center.shape)
 
         xoutput = x1[:, 0]
@@ -442,9 +452,6 @@ class Vit_base(nn.Module):
         output = center[:, 0]
 
         return xoutput, youtput, output
-        # return output
-
-
 
 
 def vit_hsi(in_chans=3, img_size=6, patch_size=2,  **kwargs):
@@ -599,10 +606,10 @@ def load_selected_blocks(model, pretrained_path, selected_layers=[0, 2, 5, 7]):
 
 
 if __name__ == "__main__":
-    img_size = 12
-    x = torch.randn(2, 3, img_size, img_size).cuda()  # batch size=2
+    img_size = 6
+    x = torch.randn(2, 15, img_size, img_size).cuda()  # batch size=2
     y = torch.randn(2, 1, img_size, img_size).cuda()  # batch size=2
-    model = Vit_base(channell=3, channel2=1, img_size=img_size).cuda()
+    model = Vit_base(channell=15, channel2=1, img_size=img_size).cuda()
     output1, outpu2, output3 = model(x, y)
     print("output shape:", output1.shape, outpu2.shape, output3.shape)  # [2, 37, 384] from cls
 

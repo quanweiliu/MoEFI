@@ -584,15 +584,95 @@ class Expert(nn.Module):
         return self.net(x)
 
 
+# class ModalitySpecificMoE_ViT(nn.Module):
+#     def __init__(self, 
+#                  in_channels,         # input dim (C)
+#                  hidden_dim=256,     # hidden dim in expert
+#                  num_experts=2,  # number of experts per modality
+#                  top_k=2,        # top-k experts used
+#                  shared_expert=False,
+#                  dropout=0.0):
+#         super().__init__()
+
+#         self.num_experts = num_experts
+#         self.top_k = top_k
+#         self.shared_expert = shared_expert
+
+#         # Experts per modality
+#         self.rgb_experts = nn.ModuleList([Expert(in_channels, hidden_dim) for _ in range(num_experts)])
+#         self.hsi_experts = nn.ModuleList([Expert(in_channels, hidden_dim) for _ in range(num_experts)])
+#         self.shared_experts = nn.ModuleList([Expert(in_channels, hidden_dim) for _ in range(num_experts)]) if shared_expert else None
+
+#         # Gating networks (shared across modalities)
+#         self.rgb_gate = nn.Linear(in_channels, num_experts)
+#         self.hsi_gate = nn.Linear(in_channels, num_experts)
+#         self.shared_gate = nn.Linear(in_channels, num_experts) if shared_expert else None
+
+#         self.dropout = nn.Dropout(dropout)
+
+#     def route(self, x, gate_layer, experts):
+#         # x: (B, C, N)
+#         B, C, N = x.shape
+#         x = x.permute(0, 2, 1).contiguous().view(B*N, C)  # (B*N, C)
+#         scores = gate_layer(x)                            # (B*N, num_experts)
+#         topk_scores, topk_indices = torch.topk(scores, self.top_k, dim=-1)  # (B*N, top_k)
+#         topk_weights = F.softmax(topk_scores, dim=-1)                       # (B*N, top_k)
+
+#         out = torch.zeros_like(x)
+#         for i in range(self.top_k):
+#             idx = topk_indices[:, i]
+#             weight = topk_weights[:, i].unsqueeze(-1)  # (B*N, 1)
+#             for j in range(self.num_experts):
+#                 mask = (idx == j)
+#                 if mask.sum() == 0:
+#                     continue
+#                 x_j = x[mask]
+#                 out_j = experts[j](x_j)
+#                 out[mask] += weight[mask] * out_j
+
+#         out = self.dropout(out)
+#         out = out.view(B, N, C).permute(0, 2, 1).contiguous()  # (B, C, N)
+#         return out
+
+#     def forward(self, x_rgb, x_hsi, x_shared=None):
+#         # x_rgb, x_hsi: (B, C, N), x_shared optional
+#         out_rgb = self.route(x_rgb, self.rgb_gate, self.rgb_experts)
+#         out_hsi = self.route(x_hsi, self.hsi_gate, self.hsi_experts)
+        
+#         if self.shared_expert and x_shared is not None:
+#             out_shared = self.route(x_shared, self.shared_gate, self.shared_experts)
+#             out = out_rgb + out_hsi + out_shared  # or torch.cat([...], dim=1)
+#         else:
+#             out = out_rgb + out_hsi
+
+#         return out  # (B, C, N)
+
+
+# Assume Expert class is defined elsewhere, e.g.:
+class Expert(nn.Module):
+    def __init__(self, in_channels, hidden_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_channels, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, in_channels)
+        )
+    def forward(self, x):
+        return self.net(x)
+
+
 class ModalitySpecificMoE_ViT(nn.Module):
-    def __init__(self, 
-                 in_channels,         # input dim (C)
-                 hidden_dim=256,     # hidden dim in expert
-                 num_experts=2,  # number of experts per modality
-                 top_k=2,        # top-k experts used
+    def __init__(self,
+                 in_channels,
+                 hidden_dim=256,
+                 num_experts=2,
+                 top_k=2,
                  shared_expert=False,
                  dropout=0.0):
         super().__init__()
+
+        # Assert that top_k is not greater than num_experts
+        assert top_k <= num_experts, "top_k must be less than or equal to num_experts"
 
         self.num_experts = num_experts
         self.top_k = top_k
@@ -603,7 +683,7 @@ class ModalitySpecificMoE_ViT(nn.Module):
         self.hsi_experts = nn.ModuleList([Expert(in_channels, hidden_dim) for _ in range(num_experts)])
         self.shared_experts = nn.ModuleList([Expert(in_channels, hidden_dim) for _ in range(num_experts)]) if shared_expert else None
 
-        # Gating networks (shared across modalities)
+        # Gating networks
         self.rgb_gate = nn.Linear(in_channels, num_experts)
         self.hsi_gate = nn.Linear(in_channels, num_experts)
         self.shared_gate = nn.Linear(in_channels, num_experts) if shared_expert else None
@@ -611,43 +691,70 @@ class ModalitySpecificMoE_ViT(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def route(self, x, gate_layer, experts):
-        # x: (B, C, N)
+        """
+        A fully vectorized routing function for speed.
+        """
+        # x: (B, C, N) -> (Batch, Channels, SequenceLength)
         B, C, N = x.shape
-        x = x.permute(0, 2, 1).contiguous().view(B*N, C)  # (B*N, C)
-        scores = gate_layer(x)                            # (B*N, num_experts)
-        topk_scores, topk_indices = torch.topk(scores, self.top_k, dim=-1)  # (B*N, top_k)
-        topk_weights = F.softmax(topk_scores, dim=-1)                       # (B*N, top_k)
+        
+        # 1. Prepare tokens and get routing scores
+        tokens = x.permute(0, 2, 1).reshape(B * N, C)  # (B*N, C)
+        scores = gate_layer(tokens)                    # (B*N, num_experts)
+        
+        # Get top-k expert indices and weights for each token
+        topk_weights, topk_indices = torch.topk(scores, self.top_k, dim=-1) # (B*N, top_k)
+        topk_weights = F.softmax(topk_weights, dim=-1)                      # (B*N, top_k)
 
-        out = torch.zeros_like(x)
-        for i in range(self.top_k):
-            idx = topk_indices[:, i]
-            weight = topk_weights[:, i].unsqueeze(-1)  # (B*N, 1)
-            for j in range(self.num_experts):
-                mask = (idx == j)
-                if mask.sum() == 0:
-                    continue
-                x_j = x[mask]
-                out_j = experts[j](x_j)
-                out[mask] += weight[mask] * out_j
+        # 2. Flatten assignments for batch processing
+        # Each token is routed top_k times, so we create a flat list of all assignments
+        flat_indices = topk_indices.flatten()             # (B*N*top_k)
+        flat_weights = topk_weights.flatten()             # (B*N*top_k)
+        
+        # Repeat tokens to match the flattened assignments
+        repeated_tokens = tokens.repeat_interleave(self.top_k, dim=0) # (B*N*top_k, C)
+        
+        # 3. Vectorized Scatter-Gather
+        final_output = torch.zeros_like(tokens) # (B*N, C)
+        
+        # Loop over the (small) number of experts, not the data
+        for i in range(self.num_experts):
+            # Find all assignments for the current expert
+            mask = (flat_indices == i)
+            
+            if mask.any():
+                # Gather the tokens and weights for this expert
+                expert_inputs = repeated_tokens[mask]
+                expert_weights = flat_weights[mask]
+                
+                # Run the expert on its batch of tokens
+                expert_outputs = experts[i](expert_inputs)
+                
+                # Apply weights
+                weighted_outputs = expert_outputs * expert_weights.unsqueeze(-1)
+                
+                # Scatter (add) the results back to the correct token positions
+                # We find the original token position by integer dividing the mask index by top_k
+                original_token_pos = torch.where(mask)[0] // self.top_k
+                final_output.index_add_(0, original_token_pos, weighted_outputs)
 
-        out = self.dropout(out)
-        out = out.view(B, N, C).permute(0, 2, 1).contiguous()  # (B, C, N)
+        # 4. Apply dropout and reshape back to original dimensions
+        final_output = self.dropout(final_output)
+        out = final_output.view(B, N, C).permute(0, 2, 1) # (B, C, N)
         return out
 
     def forward(self, x_rgb, x_hsi, x_shared=None):
-        # x_rgb, x_hsi: (B, C, N), x_shared optional
+        # This part remains the same as it was already well-structured
         out_rgb = self.route(x_rgb, self.rgb_gate, self.rgb_experts)
         out_hsi = self.route(x_hsi, self.hsi_gate, self.hsi_experts)
-        
+
         if self.shared_expert and x_shared is not None:
             out_shared = self.route(x_shared, self.shared_gate, self.shared_experts)
-            out = out_rgb + out_hsi + out_shared  # or torch.cat([...], dim=1)
+            out = out_rgb + out_hsi + out_shared
         else:
             out = out_rgb + out_hsi
-
-        return out  # (B, C, N)
-
-
+            
+        return out
+    
 
 if __name__ == "__main__":
 	# a = torch.rand(2, 5, 3, 3)
@@ -684,10 +791,10 @@ if __name__ == "__main__":
     center = moefusion(xe4, ye4)
     print(center.shape)
 
-    xe4 = torch.rand(2, 512, 64)
-    ye4 = torch.rand(2, 512, 64)
+    xe4 = torch.rand(2, 37, 384)
+    ye4 = torch.rand(2, 37, 384)
 
-    moefusion = ModalitySpecificMoE_ViT(in_channels=512, hidden_dim=256)
+    moefusion = ModalitySpecificMoE_ViT(in_channels=37, hidden_dim=256)
     center = moefusion(xe4, ye4)
-    print(center.shape)
+    print("moefusion", center.shape)
 
