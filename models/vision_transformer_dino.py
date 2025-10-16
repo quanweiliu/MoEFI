@@ -182,10 +182,8 @@ class DinoVisionTransformer(nn.Module):
         previous_dtype = x.dtype
         npatch = x.shape[1] - 1
         N = self.pos_embed.shape[1] - 1
-        
         if npatch == N and w == h:
             return self.pos_embed
-        
         pos_embed = self.pos_embed.float()
         class_pos_embed = pos_embed[:, 0]
         patch_pos_embed = pos_embed[:, 1:]
@@ -217,16 +215,11 @@ class DinoVisionTransformer(nn.Module):
     def prepare_tokens_with_masks(self, x, masks=None):
         B, nc, w, h = x.shape
         x = self.patch_embed(x)
-        # print("x shape:", x.shape)
         if masks is not None:
             x = torch.where(masks.unsqueeze(-1), self.mask_token.to(x.dtype).unsqueeze(0), x)
 
         x = torch.cat((self.cls_token.expand(x.shape[0], -1, -1), x), dim=1)
-        # print("cat output shape", x.shape)         # [B, 4, 384]/[B, 1, 384]
-
-        # print("pos_embed shape:", self.pos_embed.shape)
         x = x + self.interpolate_pos_encoding(x, w, h)
-        # print("output shape", x.shape)             # [B, 4, 384]/[B, 1, 384]
 
         if self.register_tokens is not None:
             x = torch.cat(
@@ -270,7 +263,6 @@ class DinoVisionTransformer(nn.Module):
             x = blk(x)
 
         x_norm = self.norm(x)
-        # print("x_norm shape:", x_norm.shape)  # [2, 37, 384]
         return {
             "x_norm_clstoken": x_norm[:, 0],
             "x_norm_regtokens": x_norm[:, 1 : self.num_register_tokens + 1],
@@ -334,7 +326,6 @@ class DinoVisionTransformer(nn.Module):
     def forward(self, *args, is_training=False, **kwargs):
         ret = self.forward_features(*args, **kwargs)
         if is_training:
-            # print("training")
             return ret
         else:
             # print("Not training")
@@ -378,18 +369,6 @@ def init_weights_vit_timm(module: nn.Module, name: str = ""):
             nn.init.zeros_(module.bias)
 
 
-def load_dinov2_transformer_only(model, pretrained_path):
-    state_dict = torch.load(pretrained_path, map_location="cpu")
-    if "model" in state_dict:
-        state_dict = state_dict["model"]
-    filtered = {
-        k: v for k, v in state_dict.items()
-        if not (k.startswith("patch_embed") or k.startswith("pos_embed") or k.startswith("cls_token"))
-    }
-    msg = model.load_state_dict(filtered, strict=False)
-    print("✅ Transformer weights loaded (without patch_embed):", msg)
-
-
 class Vit_base(nn.Module):
     def __init__(self, channell, channel2, img_size=6, patch_size=2, selected_layers=[0,1,2,3,4,5,6,7,8,9,10,11], **kwargs):
         super(Vit_base, self).__init__()
@@ -422,12 +401,14 @@ class Vit_base(nn.Module):
         # adjust along the input image size
         # self.SpMoE = ModalitySpecificMoE_ViT(10)
 
-        load_selected_blocks(self.model1, \
-                        "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrain/dinov2_vits14_pretrain.pth",
-                        selected_layers=selected_layers)
-        load_selected_blocks(self.model2, \
-                        "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrain/dinov2_vits14_pretrain.pth",
-                        selected_layers=selected_layers)
+        # load_selected_blocks(self.model1, \
+        #                 "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrained/dinov2_vits14_pretrain.pth",
+        #                 selected_layers=selected_layers)
+        # load_selected_blocks(self.model2, \
+        #                 "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrained/dinov2_vits14_pretrain.pth",
+        #                 selected_layers=selected_layers)
+        load_transformer(self.model1, "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrained/dinov2_vits14_pretrain.pth")
+        load_transformer(self.model2, "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrained/dinov2_vits14_pretrain.pth")
 
     def get_visulization(self, x, y):
         x1 = self.model1(x)
@@ -471,7 +452,7 @@ def vit_hsi(in_chans=3, img_size=6, patch_size=2,  **kwargs):
 
 
 # for vit_small
-def vit_selected_small(in_chans=3, img_size=6, patch_size=2, selected_layers=[0, 2, 5, 7], **kwargs):
+def vit_selected_small(in_chans=3, img_size=6, patch_size=2, selected_layers=[0,1,2,3,4,5,6,7,8,9,10,11], **kwargs):
     model = DinoVisionTransformer(
         img_size=img_size,
         patch_size=patch_size,
@@ -482,13 +463,16 @@ def vit_selected_small(in_chans=3, img_size=6, patch_size=2, selected_layers=[0,
         mlp_ratio=4.0,
         embed_layer=CustomSmallPatchEmbed,
         block_fn=partial(Block, attn_class=MemEffAttention),
-        block_chunks=0,
+        block_chunks=0,       # 这个参数这么重要？？？？
     )
+
+    load_transformer(model, "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrained/dinov2_vits14_pretrain.pth")
     return model
 
 
-def vit_small(patch_size=16, num_register_tokens=0, **kwargs):
+def vit_small(patch_size=16, img_size=6, num_register_tokens=0, **kwargs):
     model = DinoVisionTransformer(
+        img_size=img_size,
         patch_size=patch_size,
         embed_dim=384,
         depth=12,
@@ -496,8 +480,11 @@ def vit_small(patch_size=16, num_register_tokens=0, **kwargs):
         mlp_ratio=4,
         block_fn=partial(Block, attn_class=MemEffAttention),
         num_register_tokens=num_register_tokens,
+        # block_chunks=0,       # 这个参数这么重要？？？？
         **kwargs,
     )
+
+    load_transformer(model, "/home/icclab/Documents/lqw/Multimodal_Classification/MoEIF/pretrained/dinov2_vits14_pretrain.pth")
     return model
 
 
@@ -563,7 +550,7 @@ def vit_giant2(patch_size=16, num_register_tokens=0, **kwargs):
 
 
 def load_transformer(model, pretrained_path):
-    state_dict = torch.load(pretrained_path, map_location="cpu")
+    state_dict = torch.load(pretrained_path, map_location="cpu", weights_only=True)
     if "model" in state_dict:
         state_dict = state_dict["model"]
     filtered = {
@@ -612,6 +599,20 @@ if __name__ == "__main__":
     model = Vit_base(channell=15, channel2=1, img_size=img_size).cuda()
     output1, outpu2, output3 = model(x, y)
     print("output shape:", output1.shape, outpu2.shape, output3.shape)  # [2, 37, 384] from cls
+
+
+    # img_size = 6
+    # x = torch.randn(2, 15, img_size, img_size).cuda()  # batch size=2
+    # model = vit_selected_small(in_chans=15, img_size=img_size).cuda()
+    # output= model(x)
+    # print("output shape:", output.shape)  # [2, 37, 384] from cls
+
+
+    # img_size = 6
+    # x = torch.randn(2, 3, img_size, img_size).cuda()  # batch size=2
+    # model = vit_small(img_size=img_size, patch_size=2).cuda()
+    # output= model(x)
+    # print("output shape:", output.shape)  # [2, 37, 384] from cls
 
 
 # if __name__ == "__main__":

@@ -12,31 +12,36 @@ def KL_loss(f_s, f_t, T=2, reduction='sum'):
     return loss
 
 
-def distillation_loss(student_logits, teacher_logits, labels, T=2.0, alpha=0.7, reduction='batchmean'):
-    """
-    混合蒸馏损失，包括 KL 散度损失（soft labels）和 CE 损失（hard labels）
+class distillation_loss(nn.Module):
+    def __init__(self, T=2.0, alpha=0.7, reduction='batchmean'):
+        super(distillation_loss, self).__init__()
+        self.T = T
+        self.alpha = alpha
+        self.reduction = reduction
 
-    参数：
-    - student_logits: 学生模型输出（未归一化 logits）
-    - teacher_logits: 教师模型输出（未归一化 logits）
-    - labels: 真值标签（整数形式）
-    - T: 蒸馏温度（越高 softmax 越平滑）
-    - alpha: 控制 KL 与 CE 的权重，alpha 越大越注重 teacher 的 soft label
-    - reduction: KL loss 的 reduction 方式，推荐 'batchmean' 或 'mean'
-    """
+    def forward(self, student_logits, teacher_logits, labels=None):
+        """
+        混合蒸馏损失，包括 KL 散度损失（soft labels）和 CE 损失（hard labels）
 
-    # KL 散度（teacher 提供 soft label）
-    student_log_probs = F.log_softmax(student_logits / T, dim=1)
-    teacher_probs = F.softmax(teacher_logits / T, dim=1)
-    kl = F.kl_div(student_log_probs, teacher_probs, reduction=reduction) * (T ** 2)
+        参数：
+        - student_logits: 学生模型输出（未归一化 logits）
+        - teacher_logits: 教师模型输出（未归一化 logits）
+        - labels: 真值标签（整数形式）
+        """
+        # KL 散度（teacher 提供 soft label）
+        student_log_probs = F.log_softmax(student_logits / self.T, dim=1)
+        teacher_probs = F.softmax(teacher_logits / self.T, dim=1)
+        kl = F.kl_div(student_log_probs, teacher_probs, reduction=self.reduction) * (self.T ** 2)
 
-    return kl
+        if labels is not None:
+            # 交叉熵（真实标签）
+            ce = F.cross_entropy(student_logits, labels)
 
-    # 交叉熵（真实标签）
-    ce = F.cross_entropy(student_logits, labels)
+            # 混合损失
+            return self.alpha * kl + (1 - self.alpha) * ce
 
-    # 混合损失
-    return alpha * kl + (1 - alpha) * ce
+        return kl
+
 
 if __name__ == "__main__":
 

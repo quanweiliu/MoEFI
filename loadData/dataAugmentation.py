@@ -1,9 +1,9 @@
-import random
 import torch
 
 from torchvision import datasets, transforms
 from torchvision.transforms import InterpolationMode
 from PIL import ImageFilter, ImageOps
+import random
 
 
 class SpectralDropout(object):

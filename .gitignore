@@ -1,7 +1,6 @@
 /result
-/pretrain
+/pretrained
 /__pycache__/
 *.pyc
 *.pth
-*.ipynb
 *.gitignore
